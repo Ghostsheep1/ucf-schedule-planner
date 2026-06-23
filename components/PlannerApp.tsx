@@ -291,9 +291,9 @@ export function PlannerApp() {
 
       <div
         id="planner-container"
-        className="fixed bottom-0 top-14 grid w-full grid-cols-1 overflow-y-auto bg-white px-3 lg:grid-cols-[minmax(0,1fr)_22rem] lg:overflow-hidden"
+        className="fixed bottom-0 top-14 grid w-full grid-cols-1 overflow-y-auto bg-white px-3 lg:grid-cols-[22rem_minmax(0,1fr)] lg:overflow-hidden"
       >
-        <section className="order-1 min-w-0 py-3 lg:order-1 lg:h-full lg:pr-2">
+        <section className="order-1 min-w-0 py-3 lg:order-2 lg:h-full lg:pl-2">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1 text-xs font-semibold text-black/70">
             <div>{planner.term}</div>
             <div className="flex flex-wrap items-center gap-2 text-[11px]">
@@ -306,7 +306,7 @@ export function PlannerApp() {
           <WeeklyCalendar blocks={blocks} removeSelection={removeSelection} removeCustomEvent={removeCustomEvent} />
         </section>
 
-        <aside className="order-2 flex min-h-80 w-full flex-col border-t border-black/10 bg-white lg:order-2 lg:h-full lg:border-l lg:border-t-0">
+        <aside className="order-2 flex min-h-80 w-full flex-col border-t border-black/10 bg-white lg:order-1 lg:h-full lg:border-r lg:border-t-0">
           <div id="planner-course-search" className="px-1 pt-1">
             <div className="ml-1 flex flex-row pb-1 text-xs font-medium text-black/75 2xl:text-sm">
               <div>{planner.term}</div>
