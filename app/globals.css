@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f5f1e7;
+  color: #171717;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 3px solid #ffc904;
+  outline-offset: 2px;
+}
+
+.planner-scrollbar {
+  scrollbar-color: #c59100 #f3ead1;
+  scrollbar-width: thin;
+}
+
+.planner-scrollbar::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.planner-scrollbar::-webkit-scrollbar-thumb {
+  background: #c59100;
+  border-radius: 999px;
+}
+
+.planner-scrollbar::-webkit-scrollbar-track {
+  background: #f3ead1;
+}
