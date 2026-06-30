@@ -1,4 +1,6 @@
 .next
+.svelte-kit
+build
 node_modules
 out
 .env*
