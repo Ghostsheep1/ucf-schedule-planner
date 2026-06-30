@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import type { Campus, Course, DayOfWeek, InstructionMode, Meeting, Section } from "@/lib/types";
+import type { Campus, Course, DayOfWeek, InstructionMode, Meeting, Section } from "$lib/types";
 
 export const UCF_CATALOG_ID = "66bcc88cf93938001c548373";
 export const UCF_CATALOG_REFERER = "https://www.ucf.edu/catalog/undergraduate/";
@@ -63,8 +63,7 @@ async function kualiFetch<T>(path: string): Promise<T> {
       accept: "application/json",
       referer: UCF_CATALOG_REFERER,
       "user-agent": "KnightPlanner/0.1 UCF schedule planner"
-    },
-    next: { revalidate: 3600 }
+    }
   });
   if (!response.ok) {
     throw new Error(`UCF Catalog returned ${response.status}`);
