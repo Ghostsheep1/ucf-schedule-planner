@@ -66,6 +66,8 @@ export function PlannerApp() {
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [scheduleDropdownOpen, setScheduleDropdownOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [notice, setNotice] = useState("");
@@ -193,12 +195,18 @@ export function PlannerApp() {
   }
 
   function createSchedule() {
-    const next: SchedulePlan = { ...initialSchedule(), name: `Schedule ${schedules.length + 1}` };
+    const next: SchedulePlan = { ...initialSchedule(), name: `New schedule ${schedules.length + 1}` };
     setPlanner((current) => ({
       ...current,
       schedulesByTerm: { ...current.schedulesByTerm, [current.term]: [...schedules, next] },
       activeScheduleIdByTerm: { ...current.activeScheduleIdByTerm, [current.term]: next.id }
     }));
+    setScheduleDropdownOpen(false);
+  }
+
+  function renameActiveSchedule(name: string) {
+    const trimmed = name.trim() || "My schedule";
+    updateActiveSchedule((schedule) => ({ ...schedule, name: trimmed }));
   }
 
   function duplicateSchedule() {
@@ -230,6 +238,19 @@ export function PlannerApp() {
       activeScheduleIdByTerm: { ...current.activeScheduleIdByTerm, [current.term]: remaining[0].id }
     }));
     setMenuOpen(false);
+  }
+
+  function deleteScheduleById(scheduleId: string) {
+    if (scheduleId === activeSchedule.id) {
+      deleteSchedule();
+      return;
+    }
+    const remaining = schedules.filter((schedule) => schedule.id !== scheduleId);
+    setPlanner((current) => ({
+      ...current,
+      schedulesByTerm: { ...current.schedulesByTerm, [current.term]: remaining },
+      activeScheduleIdByTerm: { ...current.activeScheduleIdByTerm, [current.term]: current.activeScheduleIdByTerm[current.term] ?? remaining[0]?.id }
+    }));
   }
 
   function addSection(course: Course, section: Section) {
@@ -313,25 +334,24 @@ export function PlannerApp() {
               <div className="grow text-right">Credits: {credits}</div>
             </div>
 
-            <section className="rounded-lg border-2 border-[#a2aabd] bg-[#ebebeb] p-2">
-              <div className="flex items-center gap-2">
-                <select
-                  aria-label="Active schedule"
-                  className="min-w-0 grow rounded-md border border-black/20 bg-white px-2 py-1.5 text-sm font-semibold"
-                  value={activeSchedule.id}
-                  onChange={(event) =>
-                    setPlanner((current) => ({
-                      ...current,
-                      activeScheduleIdByTerm: { ...current.activeScheduleIdByTerm, [current.term]: event.target.value }
-                    }))
-                  }
-                >
-                  {schedules.map((schedule) => (
-                    <option key={schedule.id} value={schedule.id}>
-                      {schedule.name}
-                    </option>
-                  ))}
-                </select>
+            <section className="flex w-full flex-col">
+              <div className="flex w-full flex-row pb-1 text-sm 2xl:text-base" title="Toggle schedule dropdown">
+                <div className="flex min-w-0 grow flex-row justify-start rounded-md px-0.5 py-1 text-left hover:bg-[#d8d8d8]">
+                  <button
+                    className={`origin-center transition ${scheduleDropdownOpen ? "rotate-90" : ""}`}
+                    onClick={() => setScheduleDropdownOpen((open) => !open)}
+                    title="Toggle schedule dropdown"
+                  >
+                    <ChevronDown className="-rotate-90 h-5 w-5" />
+                  </button>
+                  <input
+                    id="schedule-name-input"
+                    className="mr-1 min-w-0 grow cursor-text rounded border-none bg-white px-0.5 py-0 text-sm font-semibold outline-none"
+                    value={activeSchedule.name}
+                    onChange={(event) => renameActiveSchedule(event.target.value)}
+                    title="Schedule name"
+                  />
+                </div>
                 <button className="rounded-md bg-ucf-black p-2 text-ucf-gold" onClick={createSchedule} title="Create schedule">
                   <Plus className="h-4 w-4" />
                 </button>
@@ -352,6 +372,30 @@ export function PlannerApp() {
                   ) : null}
                 </div>
               </div>
+              {scheduleDropdownOpen ? (
+                <div className="w-full pb-0.5 pl-4 pr-6">
+                  {schedules.filter((schedule) => schedule.id !== activeSchedule.id).map((schedule) => (
+                    <div key={schedule.id} className="flex h-6 w-full flex-row">
+                      <button
+                        className="h-6 min-w-0 grow items-center rounded-md pl-1.5 text-left text-sm hover:bg-[#d8d8d8]"
+                        title={`Switch to ${schedule.name}`}
+                        onClick={() => {
+                          setPlanner((current) => ({
+                            ...current,
+                            activeScheduleIdByTerm: { ...current.activeScheduleIdByTerm, [current.term]: schedule.id }
+                          }));
+                          setScheduleDropdownOpen(false);
+                        }}
+                      >
+                        <span className="block w-full min-w-0 overflow-x-auto whitespace-nowrap">{schedule.name}</span>
+                      </button>
+                      <button className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md hover:bg-[#d8d8d8]" title={`Delete ${schedule.name}`} onClick={() => deleteScheduleById(schedule.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <div className="mt-2 flex items-center justify-between text-xs text-black/70">
                 <span>{selectedPairs.length} courses, {activeSchedule.customEvents.length} custom events</span>
                 <label className="flex items-center gap-1">
@@ -381,32 +425,28 @@ export function PlannerApp() {
                   onChange={(event) => setQuery(event.target.value)}
                 />
               </div>
-              <div className="mt-2 flex flex-wrap gap-1">
-                {["COP3502C", "ENC1102", "MAC2311C", "PSY2012"].map((chip) => (
-                  <button
-                    key={chip}
-                    className={`rounded-md border px-2 py-0.5 text-xs font-bold transition ${
-                      query === chip ? "border-ucf-darkGold bg-ucf-gold text-black" : "border-black/10 bg-[#ebebeb] text-black/70 hover:bg-[#d8d8d8]"
-                    }`}
-                    onClick={() => setQuery(chip)}
-                  >
-                    {chip}
-                  </button>
-                ))}
-              </div>
-              <div className="mt-2 flex items-center justify-between text-sm">
-                <span className="inline-flex items-center gap-1 font-bold"><Settings className="h-4 w-4" /> {appliedFilterCount} filters applied</span>
+              <div className="mt-1 flex flex-row items-center justify-between gap-1 px-1 py-0.5 text-[#667085]">
+                <button
+                  className="flex grow flex-row items-center rounded-md text-sm hover:text-black"
+                  title="Show/hide course search filters"
+                  onClick={() => setFiltersOpen((open) => !open)}
+                >
+                  <Settings className="mr-1 h-4 w-4" />
+                  {appliedFilterCount} filter{appliedFilterCount === 1 ? "" : "s"} applied
+                </button>
                 <button className="text-sm font-semibold text-ucf-darkGold" onClick={() => setFilters(emptyFilters)}>
                   Clear filters
                 </button>
               </div>
-              <FiltersPanel
-                filters={filters}
-                setFilters={setFilters}
-                hasGenEdData={hasGenEdData}
-                hasSectionData={hasSectionData}
-                hasCourseResults={courses.length > 0}
-              />
+              {filtersOpen ? (
+                <FiltersPanel
+                  filters={filters}
+                  setFilters={setFilters}
+                  hasGenEdData={hasGenEdData}
+                  hasSectionData={hasSectionData}
+                  hasCourseResults={courses.length > 0}
+                />
+              ) : null}
               <p className="mt-2 rounded-md bg-[#ebebeb] p-2 text-xs font-semibold text-black/70">
                 {loadingCourses ? "Loading live UCF data..." : sourceStatus}
               </p>
