@@ -16,6 +16,7 @@
     initialSchedule,
     markConflicts,
     minutesToDisplay,
+    overlaps,
     sectionToBlocks,
     selectedCourse,
     timeToMinutes,
@@ -29,17 +30,55 @@
   const emptyFilters: Filters = { genEdTags: [], minCredits: "", maxCredits: "", onlyOpen: false };
   const githubUrl = "https://github.com/Ghostsheep1/ucf-schedule-planner";
   const issueMailto = "mailto:hsribeiro1@gmail.com?subject=Knight%20Planner%20issue";
+  const appVersion = "1.0.0";
+  const departments = [
+    ["ACG", "Accounting"],
+    ["AMH", "American History"],
+    ["ANT", "Anthropology"],
+    ["BSC", "Biological Sciences"],
+    ["CHM", "Chemistry"],
+    ["CIS", "Computer & Information Science"],
+    ["COP", "Computer Programming"],
+    ["COT", "Computing Theory"],
+    ["ECO", "Economics"],
+    ["EGN", "Engineering"],
+    ["ENC", "English Composition"],
+    ["FIL", "Film"],
+    ["FIN", "Finance"],
+    ["HUM", "Humanities"],
+    ["MAC", "Mathematics"],
+    ["MAP", "Mathematics Applications"],
+    ["MAS", "Mathematics Advanced"],
+    ["MGF", "Mathematics General"],
+    ["PCB", "Process Biology"],
+    ["PEER", "Health Center"],
+    ["PERS", "Persian"],
+    ["PHIL", "Philosophy"],
+    ["PHPE", "Philosophy, Politics, and Economics"],
+    ["PHSC", "Public Health Science"],
+    ["PHYS", "Physics"],
+    ["PLCY", "Public Policy"],
+    ["PLSC", "Plant Sciences"],
+    ["PORT", "Portuguese"],
+    ["PSY", "Psychology"],
+    ["SLS", "Student Life Skills"],
+    ["STA", "Statistics"]
+  ];
 
   let planner: PlannerState = defaultState();
   let hydrated = false;
   let query = "";
   let filters: Filters = { ...emptyFilters };
   let filtersOpen = false;
+  let genEdDropdownOpen = false;
   let courses: Course[] = [];
   let sourceStatus = "Search UCF catalog and myUCF class search.";
   let loadingCourses = false;
-  let activeView: "planner" | "requirements" = "planner";
+  let activeView: "planner" | "generator" | "requirements" = "planner";
   let menuOpen = false;
+  let aboutMenuOpen = false;
+  let infoPage: "terms" | "privacy" | "changelog" | null = null;
+  let darkMode = false;
   let scheduleDropdownOpen = false;
   let modalOpen = false;
   let aboutOpen = false;
@@ -60,6 +99,17 @@
   let eventLocation = "";
   let eventNotes = "";
   let eventError = "";
+  let generatorCourses: Course[] = [];
+  let generatorResults: SchedulePlan[] = [];
+  let generatorNotice = "Add courses and set constraints, then generate schedules.";
+  let generatorConstraints = {
+    noBefore: "",
+    noAfter: "",
+    daysOff: [] as Exclude<DayOfWeek, "Online">[],
+    onlyOpen: true,
+    minGap: "0",
+    minCredits: ""
+  };
 
   $: schedules = planner.schedulesByTerm[planner.term] ?? [initialSchedule()];
   $: activeScheduleId = planner.activeScheduleIdByTerm[planner.term] ?? schedules[0]?.id;
@@ -74,6 +124,7 @@
     activeGenEdFilters.length + Number(Boolean(filters.minCredits)) + Number(Boolean(filters.maxCredits)) + Number(activeOnlyOpen);
   $: filteredCourses = filterCourses(courses, query, filters, activeGenEdFilters, activeOnlyOpen);
   $: visibleCourses = filteredCourses.filter((course) => !hiddenCourses[course.id]);
+  $: departmentSuggestions = departmentMatches(query);
   $: baseBlocks = markConflicts([
     ...selectedPairs.flatMap(({ course, section, selection }) => sectionToBlocks(course, section, selection)),
     ...activeSchedule.customEvents.flatMap(eventToBlocks)
@@ -98,6 +149,8 @@
         localStorage.removeItem(plannerKey);
       }
     }
+    darkMode = localStorage.getItem("knight-planner-theme") === "dark";
+    document.documentElement.classList.toggle("dark", darkMode);
     hydrated = true;
   });
 
@@ -242,6 +295,22 @@
     });
   }
 
+  function departmentMatches(text: string) {
+    const clean = text.trim().toUpperCase();
+    if (!clean || /[0-9@]/.test(clean) || clean.length > 4) return [];
+    return departments.filter(([code, name]) => code.startsWith(clean) || name.toUpperCase().includes(clean)).slice(0, 10);
+  }
+
+  function selectDepartment(code: string) {
+    query = `${code} `;
+  }
+
+  function setTheme(nextDark: boolean) {
+    darkMode = nextDark;
+    document.documentElement.classList.toggle("dark", darkMode);
+    localStorage.setItem("knight-planner-theme", darkMode ? "dark" : "light");
+  }
+
   function updateActiveSchedule(updater: (schedule: SchedulePlan) => SchedulePlan) {
     planner = {
       ...planner,
@@ -270,6 +339,21 @@
       activeScheduleIdByTerm: { ...planner.activeScheduleIdByTerm, [planner.term]: next.id }
     };
     scheduleDropdownOpen = false;
+  }
+
+  function exportSchedule() {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      term: planner.term,
+      schedule: activeSchedule
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${activeSchedule.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${planner.term.replace(/\s+/g, "-").toLowerCase()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   function renameActiveSchedule(name: string) {
@@ -357,6 +441,122 @@
     eventDays = eventDays.includes(day) ? eventDays.filter((item) => item !== day) : [...eventDays, day];
   }
 
+  function toggleGeneratorDay(day: Exclude<DayOfWeek, "Online">) {
+    generatorConstraints = {
+      ...generatorConstraints,
+      daysOff: generatorConstraints.daysOff.includes(day)
+        ? generatorConstraints.daysOff.filter((item) => item !== day)
+        : [...generatorConstraints.daysOff, day]
+    };
+  }
+
+  function addGeneratorCourse(course: Course) {
+    if (generatorCourses.some((item) => item.id === course.id)) return;
+    generatorCourses = [...generatorCourses, course];
+    generatorNotice = `${course.code} added to generator.`;
+  }
+
+  function removeGeneratorCourse(courseId: string) {
+    generatorCourses = generatorCourses.filter((course) => course.id !== courseId);
+    generatorResults = [];
+  }
+
+  function sectionPassesGenerator(section: Section) {
+    if (generatorConstraints.onlyOpen && section.seatDetailsStatus === "live" && section.seatsAvailable <= 0) return false;
+    const noBefore = generatorConstraints.noBefore ? timeToMinutes(generatorConstraints.noBefore) : 0;
+    const noAfter = generatorConstraints.noAfter ? timeToMinutes(generatorConstraints.noAfter) : 24 * 60;
+    return section.meetings.every((meeting) => {
+      if (meeting.dayOfWeek === "Online") return true;
+      if (generatorConstraints.daysOff.includes(meeting.dayOfWeek)) return false;
+      if (noBefore && timeToMinutes(meeting.startTime) < noBefore) return false;
+      if (generatorConstraints.noAfter && timeToMinutes(meeting.endTime) > noAfter) return false;
+      return true;
+    });
+  }
+
+  function minGapSatisfied(blocks: CalendarBlock[]) {
+    const minGap = Number(generatorConstraints.minGap || 0);
+    if (!minGap) return true;
+    const byDay = new Map<DayOfWeek, CalendarBlock[]>();
+    blocks.forEach((block) => {
+      if (block.dayOfWeek === "Online") return;
+      byDay.set(block.dayOfWeek, [...(byDay.get(block.dayOfWeek) ?? []), block]);
+    });
+    for (const dayBlocks of byDay.values()) {
+      const sorted = dayBlocks.sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+      for (let index = 1; index < sorted.length; index += 1) {
+        if (timeToMinutes(sorted[index].startTime) - timeToMinutes(sorted[index - 1].endTime) < minGap) return false;
+      }
+    }
+    return true;
+  }
+
+  function generateSchedules() {
+    generatorResults = [];
+    const readyCourses = generatorCourses.filter((course) => course.sections.length > 0);
+    if (readyCourses.length === 0) {
+      generatorNotice = "Add courses with loaded live sections first.";
+      return;
+    }
+    const minCredits = Number(generatorConstraints.minCredits || 0);
+    const options = readyCourses.map((course) => ({
+      course,
+      sections: course.sections.filter(sectionPassesGenerator)
+    }));
+    if (options.some((option) => option.sections.length === 0)) {
+      generatorNotice = "At least one selected course has no sections matching these constraints.";
+      return;
+    }
+    const results: SchedulePlan[] = [];
+    const walk = (index: number, selections: SchedulePlan["selections"]) => {
+      if (results.length >= 250) return;
+      if (index === options.length) {
+        const candidate: SchedulePlan = { id: uid("generated"), name: `Generated ${results.length + 1}`, selections, customEvents: [] };
+        const candidateBlocks = markConflicts(getSelectionPairs(candidate).flatMap(({ course, section, selection }) => sectionToBlocks(course, section, selection)));
+        if (!candidateBlocks.some((block) => block.conflict) && minGapSatisfied(candidateBlocks) && uniqueCredits(candidate) >= minCredits) {
+          results.push(candidate);
+        }
+        return;
+      }
+      const option = options[index];
+      for (const section of option.sections) {
+        const selection = {
+          id: uid("generated-selection"),
+          courseId: option.course.id,
+          sectionId: section.id,
+          course: option.course,
+          color: colorForIndex(index)
+        };
+        const next = [...selections, selection];
+        const partial: SchedulePlan = { id: "partial", name: "Partial", selections: next, customEvents: [] };
+        const partialBlocks = getSelectionPairs(partial).flatMap(({ course, section: selectedSection, selection: selected }) =>
+          sectionToBlocks(course, selectedSection, selected)
+        );
+        if (!partialBlocks.some((block, blockIndex) => partialBlocks.some((other, otherIndex) => blockIndex !== otherIndex && overlaps(block, other)))) {
+          walk(index + 1, next);
+        }
+      }
+    };
+    walk(0, []);
+    generatorResults = results;
+    generatorNotice = results.length === 250 ? "Showing first 250 matching schedules." : `${results.length} matching schedules generated.`;
+  }
+
+  function useGeneratedSchedule(schedule: SchedulePlan) {
+    const copySchedule = {
+      ...schedule,
+      id: uid("schedule"),
+      name: schedule.name,
+      selections: schedule.selections.map((selection) => ({ ...selection, id: uid("selection") }))
+    };
+    planner = {
+      ...planner,
+      schedulesByTerm: { ...planner.schedulesByTerm, [planner.term]: [...schedules, copySchedule] },
+      activeScheduleIdByTerm: { ...planner.activeScheduleIdByTerm, [planner.term]: copySchedule.id }
+    };
+    activeView = "planner";
+  }
+
   function addCustomEvent() {
     eventError = "";
     if (!eventName.trim()) {
@@ -411,7 +611,7 @@
   <meta name="description" content="UCF schedule planner with live UCF catalog, myUCF sections, and RateMyProfessors ratings." />
 </svelte:head>
 
-<main class="min-h-screen bg-bgLight text-textLight">
+<main class="min-h-screen bg-bgLight text-textLight dark:bg-bgDark dark:text-textDark">
   <nav class="fixed top-0 z-50 flex h-12 w-full items-center justify-between border-b-2 border-ucfGold bg-ucfBlack px-4 text-white">
     <div class="flex items-center gap-3">
       <a href="/" class="grid h-9 w-9 place-items-center" aria-label="Knight Planner home">
@@ -429,7 +629,13 @@
           class={`rounded px-3 py-1 font-bold ${activeView === "planner" ? "bg-ucfGold text-black" : "text-white/70 hover:text-white"}`}
           on:click={() => (activeView = "planner")}
         >
-          Planner
+          Course Planner
+        </button>
+        <button
+          class={`rounded px-3 py-1 font-bold ${activeView === "generator" ? "bg-ucfGold text-black" : "text-white/70 hover:text-white"}`}
+          on:click={() => (activeView = "generator")}
+        >
+          Schedule Generator
         </button>
         <button
           class={`rounded px-3 py-1 font-bold ${activeView === "requirements" ? "bg-ucfGold text-black" : "text-white/70 hover:text-white"}`}
@@ -441,8 +647,28 @@
     </div>
     <div class="flex items-center gap-2 text-sm">
       <a class="hidden rounded-md px-2 py-1 hover:bg-white/10 sm:inline-flex" href={issueMailto}>Report an issue</a>
-      <button class="hidden rounded-md px-2 py-1 hover:bg-white/10 sm:inline-flex" on:click={() => (aboutOpen = true)}>About</button>
+      <div class="relative hidden sm:block">
+        <button class="rounded-md px-2 py-1 hover:bg-white/10" on:click={() => (aboutMenuOpen = !aboutMenuOpen)}>
+          About {aboutMenuOpen ? "⌃" : "⌄"}
+        </button>
+        {#if aboutMenuOpen}
+          <div class="absolute right-0 mt-2 w-44 rounded-md border border-outlineDark bg-bgDark p-2 text-base font-bold text-textDark shadow-xl">
+            <button class="block w-full rounded px-3 py-2 text-left text-ucfGold underline decoration-ucfGold decoration-2 underline-offset-4 hover:bg-hoverDark" on:click={() => (infoPage = "terms", aboutMenuOpen = false)}>Terms of Use</button>
+            <button class="block w-full rounded px-3 py-2 text-left hover:bg-hoverDark" on:click={() => (infoPage = "privacy", aboutMenuOpen = false)}>Privacy Policy</button>
+            <button class="block w-full rounded px-3 py-2 text-left hover:bg-hoverDark" on:click={() => (infoPage = "changelog", aboutMenuOpen = false)}>Changelog</button>
+          </div>
+        {/if}
+      </div>
       <a class="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-white/10" href={githubUrl} target="_blank" rel="noreferrer">GitHub</a>
+      <button
+        class="relative h-6 w-14 rounded-full border border-outlineDark bg-bgDark transition"
+        aria-label="Toggle dark mode"
+        on:click={() => setTheme(!darkMode)}
+      >
+        <span class={`absolute top-0.5 grid h-5 w-5 place-items-center rounded-full bg-outlineDark text-xs text-white transition ${darkMode ? "left-8" : "left-1"}`}>
+          {darkMode ? "☾" : "☀"}
+        </span>
+      </button>
     </div>
   </nav>
 
@@ -455,7 +681,7 @@
 
   {#if activeView === "planner"}
   <div id="planner-container" class="fixed bottom-0 top-12 grid w-full grid-cols-1 overflow-y-auto px-3 lg:grid-cols-[22rem_minmax(0,1fr)] lg:overflow-hidden">
-    <aside class="order-2 flex min-h-80 w-full flex-col border-t border-divBorderLight bg-bgLight lg:order-1 lg:h-full lg:border-r lg:border-t-0">
+    <aside class="order-2 flex min-h-80 w-full flex-col border-t border-divBorderLight bg-bgLight dark:border-divBorderDark dark:bg-bgDark lg:order-1 lg:h-full lg:border-r lg:border-t-0">
       <div id="planner-course-search" class="px-1 pt-1">
         <div class="ml-1 flex flex-row pb-1 text-xs text-secCodesLight 2xl:text-sm">
           <div>{planner.term}</div>
@@ -476,15 +702,15 @@
                 title="Schedule name"
               />
             </div>
-            <button class="h-7 rounded-md px-1 hover:bg-hoverLight" title="Add custom event" on:click={() => (modalOpen = true)}>＋</button>
-            <button class="h-7 rounded-md px-1 hover:bg-hoverLight" title="Create new schedule" on:click={createSchedule}>＋</button>
+            <button class="h-7 rounded-md px-1 hover:bg-hoverLight dark:hover:bg-hoverDark" title="Create new schedule" on:click={createSchedule}>＋</button>
+            <button class="h-7 rounded-md px-1 hover:bg-hoverLight dark:hover:bg-hoverDark" title="Export schedule" on:click={exportSchedule}>↗</button>
             <div class="relative">
-              <button class="h-7 rounded-md px-1 hover:bg-hoverLight" title="Schedule options" on:click={() => (menuOpen = !menuOpen)}>⋮</button>
+              <button class="h-7 rounded-md px-1 hover:bg-hoverLight dark:hover:bg-hoverDark" title="Schedule options" on:click={() => (menuOpen = !menuOpen)}>⋮</button>
               {#if menuOpen}
-                <div class="absolute right-0 z-20 mt-1 w-32 rounded-md border border-outlineLight bg-bgLight p-1 shadow-lg">
-                  <button class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-hoverLight" on:click={() => (modalOpen = true, menuOpen = false)}>Add Event</button>
-                  <button class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-hoverLight" on:click={duplicateSchedule}>Duplicate</button>
-                  <button class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-hoverLight" on:click={() => deleteSchedule()}>Delete</button>
+                <div class="absolute right-0 z-20 mt-1 w-40 rounded-md border border-outlineLight bg-bgLight p-1 shadow-lg dark:border-outlineDark dark:bg-bgSecondaryDark">
+                  <button class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-hoverLight dark:hover:bg-hoverDark" on:click={() => (modalOpen = true, menuOpen = false)}>＋ Add Event</button>
+                  <button class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-hoverLight dark:hover:bg-hoverDark" on:click={() => deleteSchedule()}>♙ Delete</button>
+                  <button class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-hoverLight dark:hover:bg-hoverDark" on:click={duplicateSchedule}>⧉ Duplicate</button>
                 </div>
               {/if}
             </div>
@@ -521,6 +747,16 @@
               placeholder="Search courses (e.g. 'COP3502C') or @professor"
               class="w-full rounded-lg border-2 border-outlineLight bg-transparent px-2 py-0 text-xl placeholder:text-base lg:text-base lg:placeholder:text-sm"
             />
+            {#if departmentSuggestions.length > 0}
+              <div class="absolute left-0 right-0 z-30 mt-1 rounded-lg border-2 border-outlineLight bg-bgLight p-2 shadow-xl dark:border-outlineDark dark:bg-bgSecondaryDark">
+                {#each departmentSuggestions as [code, name]}
+                  <button class="grid w-full grid-cols-[5rem_1fr] rounded px-2 py-1 text-left hover:bg-hoverLight dark:hover:bg-hoverDark" on:click={() => selectDepartment(code)}>
+                    <b>{code}</b>
+                    <span class="italic">{name}</span>
+                  </button>
+                {/each}
+              </div>
+            {/if}
           </div>
 
           <div class="flex flex-col text-secCodesLight">
@@ -533,20 +769,31 @@
 
             {#if filtersOpen}
               <div class="mx-1 my-1 flex flex-col gap-2 px-2 py-1 text-xs">
-                {#if hasGenEdData}
-                  <div class="flex flex-col gap-1">
-                    <span>Gen-Eds:</span>
-                    {#each ucfAttributeTags as tag}
-                      <label class="flex items-center gap-2">
-                        <input type="checkbox" checked={filters.genEdTags.includes(tag)} on:change={() => toggleTag(tag)} />
-                        {tag}
-                      </label>
-                    {/each}
+                {#if hasGenEdData || courses.length > 0}
+                  <div class="relative grid grid-cols-[5rem_1fr] items-start gap-2">
+                    <span class="pt-1">Gen-Eds:</span>
+                    <div>
+                      <button class="flex w-full items-center justify-between rounded-md border border-outlineLight px-2 py-1 text-left dark:border-outlineDark" on:click={() => (genEdDropdownOpen = !genEdDropdownOpen)}>
+                        <span>{filters.genEdTags.length ? `${filters.genEdTags.length} selected` : "Select Gen Eds"}</span>
+                        <span>{genEdDropdownOpen ? "×" : "⌄"}</span>
+                      </button>
+                      {#if genEdDropdownOpen}
+                        <div class="absolute left-0 right-0 z-20 mt-1 max-h-56 overflow-auto rounded-md border border-outlineLight bg-bgLight p-2 shadow-xl dark:border-outlineDark dark:bg-bgSecondaryDark">
+                          {#each ucfAttributeTags as tag}
+                            <label class="flex items-center gap-2 rounded px-2 py-1 hover:bg-hoverLight dark:hover:bg-hoverDark">
+                              <input type="checkbox" checked={filters.genEdTags.includes(tag)} on:change={() => toggleTag(tag)} />
+                              {tag}
+                            </label>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                    {#if !hasGenEdData}
+                      <p class="col-span-2 rounded-md bg-lightOrange/40 p-2 text-xs font-semibold text-black">
+                        Gen Ed tags appear when the live catalog provides attributes for these courses.
+                      </p>
+                    {/if}
                   </div>
-                {:else if courses.length > 0}
-                  <p class="rounded-md bg-lightOrange/40 p-2 text-xs font-semibold text-black">
-                    UCF Catalog did not return per-course Gen Ed attributes for these results. Attribute filters will appear when the live source provides them.
-                  </p>
                 {/if}
 
                 <div class="flex flex-row gap-4">
@@ -706,8 +953,118 @@
       <WeeklyCalendar {blocks} {removeSelection} {removeCustomEvent} />
     </section>
   </div>
+  {:else if activeView === "generator"}
+    <section class="fixed bottom-0 top-12 grid w-full grid-cols-1 overflow-auto bg-bgLight px-4 py-5 dark:bg-bgDark lg:grid-cols-[24rem_minmax(0,1fr)]">
+      <aside class="border-divBorderLight pr-4 dark:border-divBorderDark lg:border-r">
+        <div class="mb-5 flex items-center justify-between">
+          <h1 class="text-2xl font-black">Courses</h1>
+          <button class="rounded-md border-2 border-ucfDarkGold px-4 py-2 font-black text-ucfDarkGold" on:click={generateSchedules}>Generate schedules</button>
+        </div>
+        <input
+          bind:value={query}
+          placeholder="Search courses (e.g. 'MATH140') or @professor"
+          class="w-full rounded-lg border-2 border-outlineLight bg-transparent px-3 py-2 text-base dark:border-outlineDark"
+        />
+        <div class="mt-2 flex items-center justify-between text-secCodesLight">
+          <button on:click={() => (filtersOpen = !filtersOpen)}>⚙ {appliedFilterCount} filters applied</button>
+          <button on:click={() => (filters = { ...emptyFilters })}>Clear filters</button>
+        </div>
+
+        <div class="mt-4 space-y-2">
+          {#each visibleCourses.slice(0, 5) as course}
+            <div class="rounded-md border border-outlineLight bg-bgSecondaryLight p-2 dark:border-outlineDark dark:bg-bgSecondaryDark">
+              <div class="flex items-center justify-between">
+                <div>
+                  <b>{course.code}</b>
+                  <div class="text-sm text-secCodesLight">{course.title}</div>
+                </div>
+                <button class="rounded bg-ucfBlack px-2 py-1 text-xs font-black text-ucfGold" on:click={() => addGeneratorCourse(course)}>Add</button>
+              </div>
+              <div class="mt-1 text-xs text-secCodesLight">
+                {sectionLoading[course.id] ? "Loading sections..." : `${course.sections.length} sections`}
+              </div>
+            </div>
+          {/each}
+          {#if query.trim().length < 2}
+            <p class="py-4 text-sm font-semibold text-secCodesLight">Search for courses above and add the ones you want to schedule.</p>
+          {/if}
+        </div>
+
+        {#if generatorCourses.length > 0}
+          <div class="mt-5 border-t border-divBorderLight pt-4 dark:border-divBorderDark">
+            <h2 class="mb-2 text-lg font-black">Selected Courses</h2>
+            {#each generatorCourses as course}
+              <div class="mb-1 flex items-center justify-between rounded-md bg-bgSecondaryLight px-2 py-1 text-sm dark:bg-bgSecondaryDark">
+                <span><b>{course.code}</b> {course.sections.length} sections</span>
+                <button class="font-black text-red-700" on:click={() => removeGeneratorCourse(course.id)}>×</button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        <div class="mt-5 border-t border-divBorderLight pt-4 dark:border-divBorderDark">
+          <div class="mb-2 flex items-center justify-between">
+            <h2 class="text-lg font-black">Constraints</h2>
+            <button class="text-sm font-bold text-secCodesLight" on:click={() => (generatorConstraints = { noBefore: "", noAfter: "", daysOff: [], onlyOpen: true, minGap: "0", minCredits: "" })}>Clear</button>
+          </div>
+          <div class="grid gap-3 text-sm">
+            <label class="grid grid-cols-[7rem_1fr] items-center gap-2">No class before
+              <select class="rounded-md border border-outlineLight bg-transparent px-2 py-1 dark:border-outlineDark" bind:value={generatorConstraints.noBefore}>
+                <option value="">Any time</option>
+                {#each eventTimes() as option}<option value={option.value}>{option.label}</option>{/each}
+              </select>
+            </label>
+            <label class="grid grid-cols-[7rem_1fr] items-center gap-2">No class after
+              <select class="rounded-md border border-outlineLight bg-transparent px-2 py-1 dark:border-outlineDark" bind:value={generatorConstraints.noAfter}>
+                <option value="">Any time</option>
+                {#each eventTimes() as option}<option value={option.value}>{option.label}</option>{/each}
+              </select>
+            </label>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="mr-2">Days off:</span>
+              {#each days as day}
+                <button class={`rounded-md border px-3 py-1 font-bold ${generatorConstraints.daysOff.includes(day) ? "bg-ucfGold text-black" : "border-outlineLight dark:border-outlineDark"}`} on:click={() => toggleGeneratorDay(day)}>{day}</button>
+              {/each}
+            </div>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" bind:checked={generatorConstraints.onlyOpen} />
+              Only open sections
+            </label>
+            <div class="grid grid-cols-2 gap-3">
+              <label>Min gap (min)
+                <input class="mt-1 w-full rounded-md border border-outlineLight bg-transparent px-2 py-1 dark:border-outlineDark" type="number" min="0" bind:value={generatorConstraints.minGap} />
+              </label>
+              <label>Min credits
+                <input class="mt-1 w-full rounded-md border border-outlineLight bg-transparent px-2 py-1 dark:border-outlineDark" type="number" min="0" bind:value={generatorConstraints.minCredits} />
+              </label>
+            </div>
+          </div>
+        </div>
+      </aside>
+      <section class="min-w-0 px-4">
+        <p class="mb-4 text-center font-semibold text-secCodesLight">{generatorNotice}</p>
+        <div class="grid gap-3 xl:grid-cols-2">
+          {#each generatorResults as result}
+            <article class="rounded-md border-2 border-outlineLight bg-bgSecondaryLight p-3 dark:border-outlineDark dark:bg-bgSecondaryDark">
+              <div class="mb-2 flex items-center justify-between">
+                <b>{result.name}</b>
+                <button class="rounded bg-ucfBlack px-2 py-1 text-xs font-black text-ucfGold" on:click={() => useGeneratedSchedule(result)}>Use</button>
+              </div>
+              {#each getSelectionPairs(result) as { course, section }}
+                <div class="border-t border-divBorderLight py-1 text-sm dark:border-divBorderDark">
+                  <b>{course.code}</b> {section.sectionNumber} · {section.professorName}
+                  <div class="text-xs text-secCodesLight">
+                    {#each section.meetings as meeting}{dayLabels[meeting.dayOfWeek]} {formatTimeRange(meeting.startTime, meeting.endTime)} {/each}
+                  </div>
+                </div>
+              {/each}
+            </article>
+          {/each}
+        </div>
+      </section>
+    </section>
   {:else}
-    <section class="fixed bottom-0 top-12 w-full overflow-auto bg-bgLight px-4 py-5">
+    <section class="fixed bottom-0 top-12 w-full overflow-auto bg-bgLight px-4 py-5 dark:bg-bgDark">
       <div class="mx-auto max-w-5xl">
         <div class="mb-4 flex items-center justify-between border-b-2 border-divBorderLight pb-3">
           <div>
