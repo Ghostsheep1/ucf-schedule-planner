@@ -1,5 +1,6 @@
 .next
 .svelte-kit
+.vercel
 build
 node_modules
 out
