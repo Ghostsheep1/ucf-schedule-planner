@@ -221,6 +221,9 @@
       courses = courses.map((item) =>
         item.id === course.id ? { ...payload.course!, sections: item.sections.length ? item.sections : payload.course!.sections } : item
       );
+      generatorCourses = generatorCourses.map((item) =>
+        item.id === course.id ? { ...payload.course!, sections: item.sections.length ? item.sections : payload.course!.sections } : item
+      );
     } catch {
       // Catalog rows are still usable while detailed credits/prereqs hydrate.
     }
@@ -235,6 +238,7 @@
       if (run !== searchRun) return;
       const sections = payload.sections ?? [];
       courses = courses.map((item) => (item.id === course.id ? { ...item, sections } : item));
+      generatorCourses = generatorCourses.map((item) => (item.id === course.id ? { ...item, sections } : item));
       sourceStatus = details ? `Updated live seats for ${course.code}.` : `Loaded live sections for ${course.code}. Updating seats...`;
       if (details) {
         detailLoading = { ...detailLoading, [course.id]: false };
@@ -708,9 +712,15 @@
               <button class="h-7 rounded-md px-1 hover:bg-hoverLight dark:hover:bg-hoverDark" title="Schedule options" on:click={() => (menuOpen = !menuOpen)}>⋮</button>
               {#if menuOpen}
                 <div class="absolute right-0 z-20 mt-1 w-40 rounded-md border border-outlineLight bg-bgLight p-1 shadow-lg dark:border-outlineDark dark:bg-bgSecondaryDark">
-                  <button class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-hoverLight dark:hover:bg-hoverDark" on:click={() => (modalOpen = true, menuOpen = false)}>＋ Add Event</button>
-                  <button class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-hoverLight dark:hover:bg-hoverDark" on:click={() => deleteSchedule()}>♙ Delete</button>
-                  <button class="block w-full rounded px-2 py-1 text-left text-sm hover:bg-hoverLight dark:hover:bg-hoverDark" on:click={duplicateSchedule}>⧉ Duplicate</button>
+                  <button class="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-hoverLight dark:hover:bg-hoverDark" on:click={() => (modalOpen = true, menuOpen = false)}><span class="w-4 text-center">＋</span> Add Event</button>
+                  <button class="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-hoverLight dark:hover:bg-hoverDark" on:click={() => deleteSchedule()}>
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m6 6 1 15h10l1-15"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                    Delete
+                  </button>
+                  <button class="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-hoverLight dark:hover:bg-hoverDark" on:click={duplicateSchedule}>
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 16H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Duplicate
+                  </button>
                 </div>
               {/if}
             </div>
@@ -732,7 +742,9 @@
                   >
                     <span class="block w-full min-w-0 overflow-x-auto whitespace-nowrap">{schedule.name}</span>
                   </button>
-                  <button class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md hover:bg-hoverLight" on:click={() => deleteSchedule(schedule.id)}>×</button>
+                  <button class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md hover:bg-hoverLight dark:hover:bg-hoverDark" aria-label={`Delete ${schedule.name}`} on:click={() => deleteSchedule(schedule.id)}>
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m6 6 1 15h10l1-15"/></svg>
+                  </button>
                 </div>
               {/each}
             </div>
@@ -1128,22 +1140,42 @@
     </div>
   {/if}
 
-  {#if aboutOpen}
-    <div class="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4">
-      <section id="about" class="max-w-lg rounded-lg bg-white p-5 shadow-lg">
-        <div class="flex items-center justify-between">
-          <h2 class="text-lg font-black">About Knight Planner</h2>
-          <button on:click={() => (aboutOpen = false)} aria-label="Close about">×</button>
+  {#if infoPage}
+    <section class="fixed inset-0 z-50 overflow-auto bg-bgLight p-6 text-textLight dark:bg-bgDark dark:text-textDark">
+      <div class="mb-5 flex items-center justify-between border-b-2 border-divBorderLight pb-3 dark:border-divBorderDark">
+        <div class="flex items-center gap-3">
+          <button class="rounded-md bg-ucfBlack px-3 py-2 text-sm font-bold text-ucfGold" on:click={() => (infoPage = null)}>Back</button>
+          <h1 class="text-2xl font-black">
+            {infoPage === "terms" ? "Terms of Use" : infoPage === "privacy" ? "Privacy Policy" : "Changelog"}
+          </h1>
         </div>
-        <p class="mt-3 text-sm">
-          Knight Planner is a UCF course schedule planner built by Henrique Silva Ribeiro. It uses live UCF Kuali catalog data,
-          live myUCF class sections, and RateMyProfessors ratings.
-        </p>
-        <div class="mt-4 flex gap-2">
-          <a class="rounded-md bg-ucfBlack px-3 py-2 text-sm font-bold text-ucfGold" href={githubUrl} target="_blank" rel="noreferrer">GitHub</a>
-          <a class="rounded-md border px-3 py-2 text-sm font-bold" href={issueMailto}>Report an issue</a>
+        <span class="text-sm font-bold text-secCodesLight">Knight Planner v{appVersion}</span>
+      </div>
+
+      {#if infoPage === "terms"}
+        <div class="space-y-5">
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Introduction</h2><p class="mt-2">Knight Planner is a UCF schedule planning tool built by Henrique Silva Ribeiro. It is not affiliated with, endorsed by, or operated by the University of Central Florida.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Use of Knight Planner</h2><p class="mt-2">The app helps students explore live UCF catalog data, myUCF class sections, and RateMyProfessors information. Data can change at the source, so users should verify final schedules in official UCF systems before enrolling.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Disclaimer</h2><p class="mt-2">Information is provided as-is without warranty. Knight Planner is a planning aid, not a registration system.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Contact</h2><p class="mt-2">Questions and issues can be sent to <a class="text-ucfDarkGold underline" href={issueMailto}>hsribeiro1@gmail.com</a>.</p></section>
         </div>
-      </section>
-    </div>
+      {:else if infoPage === "privacy"}
+        <div class="space-y-5">
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">What Data Is Stored</h2><p class="mt-2">Schedules, custom events, theme choice, and planner preferences are stored locally in your browser. Knight Planner does not require an account for this version.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">External Sources</h2><p class="mt-2">The app requests live course data from UCF public systems and professor rating data from RateMyProfessors. Those services may receive normal request metadata such as IP address and browser headers.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Data Sharing</h2><p class="mt-2">Knight Planner does not sell or broker your planner data.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Contact</h2><p class="mt-2"><a class="text-ucfDarkGold underline" href={issueMailto}>hsribeiro1@gmail.com</a></p></section>
+        </div>
+      {:else}
+        <div class="relative ml-3 border-l-2 border-divBorderLight pl-5 dark:border-divBorderDark">
+          <article class="mb-7">
+            <div class="absolute -left-[7px] mt-2 h-3 w-3 rounded-full bg-ucfGold"></div>
+            <h2 class="text-xl font-black">Foundation Build <span class="text-sm text-secCodesLight">v{appVersion}</span></h2>
+            <p class="italic">June 30, 2026</p>
+            <p>Rebuilt Knight Planner as a SvelteKit UCF planner with live Kuali catalog search, myUCF sections, RateMyProfessors ratings, dark mode, schedule generator, export, and UCF-focused branding.</p>
+          </article>
+        </div>
+      {/if}
+    </section>
   {/if}
 </main>
