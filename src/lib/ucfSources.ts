@@ -46,15 +46,47 @@ type ParsedPeopleSoftSection = Section & {
 };
 
 type SeatDetails = Pick<Section, "seatsAvailable" | "seatsTotal" | "enrollmentTotal" | "waitlistAvailable" | "waitlistTotal" | "waitlistCapacity">;
+type SectionFetchOptions = {
+  includeSeatDetails?: boolean;
+};
+type CatalogSearchOptions = {
+  includeDetails?: boolean;
+};
 
 export function stripHtml(html = "") {
   return cheerio.load(html).text().replace(/\s+/g, " ").trim();
 }
 
 export function splitCourseCode(code: string) {
-  const clean = code.trim().toUpperCase().replace(/\s+/g, "");
-  const match = clean.match(/^([A-Z]{2,4})([0-9A-Z]{3,6})$/);
+  const clean = normalizeCourseCode(code);
+  const match = clean.match(/^([A-Z]{2,4})([0-9]{4}[A-Z]{0,2})$/);
   return { subject: match?.[1] ?? clean.slice(0, 3), number: match?.[2] ?? clean.slice(3), code: clean };
+}
+
+export function normalizeCourseCode(input: string) {
+  return input.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+export function likelyCourseCode(input: string) {
+  return normalizeCourseCode(input).match(/^[A-Z]{2,4}[0-9]{4}[A-Z]{0,2}$/)?.[0];
+}
+
+export function catalogSearchQueries(input: string) {
+  const cleanText = input.trim().replace(/\s+/g, " ");
+  const code = likelyCourseCode(input);
+  const queries = new Set<string>();
+  if (code) {
+    const { subject, number } = splitCourseCode(code);
+    queries.add(`${subject} ${number}`);
+    queries.add(`${subject}${number}`);
+    if (/[A-Z]$/.test(number)) {
+      const baseNumber = number.replace(/[A-Z]+$/, "");
+      queries.add(`${subject} ${baseNumber}`);
+      queries.add(`${subject}${baseNumber}`);
+    }
+  }
+  if (cleanText) queries.add(cleanText);
+  return [...queries];
 }
 
 async function kualiFetch<T>(path: string): Promise<T> {
@@ -71,7 +103,35 @@ async function kualiFetch<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function searchUcfCatalog(query: string, limit = 10) {
+export async function searchUcfCatalog(query: string, limit = 10, options: CatalogSearchOptions = {}) {
+  const seen = new Set<string>();
+  const allCourses: Course[] = [];
+  for (const searchQuery of catalogSearchQueries(query)) {
+    const courses = await searchUcfCatalogOnce(searchQuery, limit, options);
+    for (const course of courses) {
+      const key = normalizeCourseCode(course.code);
+      if (!seen.has(key)) {
+        seen.add(key);
+        allCourses.push(course);
+      }
+    }
+    if (allCourses.length >= limit) break;
+  }
+  const code = likelyCourseCode(query);
+  if (code) {
+    const base = code.replace(/[A-Z]+$/, "");
+    allCourses.sort((a, b) => {
+      const aCode = normalizeCourseCode(a.code);
+      const bCode = normalizeCourseCode(b.code);
+      const aScore = aCode === code ? 0 : aCode === base ? 1 : aCode.startsWith(base) ? 2 : 3;
+      const bScore = bCode === code ? 0 : bCode === base ? 1 : bCode.startsWith(base) ? 2 : 3;
+      return aScore - bScore || a.code.localeCompare(b.code);
+    });
+  }
+  return allCourses.slice(0, limit);
+}
+
+async function searchUcfCatalogOnce(query: string, limit = 10, options: CatalogSearchOptions = {}) {
   const params = new URLSearchParams({
     q: query,
     itemTypes: "courses",
@@ -79,7 +139,25 @@ export async function searchUcfCatalog(query: string, limit = 10) {
     skip: "0"
   });
   const results = await kualiFetch<KualiSearchResult[]>(`/search/${UCF_CATALOG_ID}?${params}`);
-  return Promise.all(results.map((result) => getUcfCatalogCourse(result)));
+  return options.includeDetails
+    ? Promise.all(results.map((result) => getUcfCatalogCourse(result)))
+    : results.map(catalogResultToCourse);
+}
+
+function catalogResultToCourse(result: KualiSearchResult): Course {
+  const code = result.code;
+  return {
+    id: result.id || result.pid || code,
+    code,
+    title: result.title,
+    credits: 0,
+    genEdTags: [],
+    description: result.description || "",
+    prerequisites: "See UCF catalog.",
+    catalogUrl: `${UCF_CATALOG_REFERER}#/courses/view/${result.id}`,
+    scheduleUrl: UCF_CLASS_SEARCH_URL,
+    sections: []
+  };
 }
 
 export async function getUcfCatalogCourse(result: KualiSearchResult): Promise<Course> {
@@ -186,7 +264,7 @@ function allFormFields(html: string) {
   return params;
 }
 
-export async function fetchUcfClassSections(courseCode: string, term: string): Promise<Section[]> {
+export async function fetchUcfClassSections(courseCode: string, term: string, options: SectionFetchOptions = {}): Promise<Section[]> {
   const first = await peopleSoftFetch(UCF_CLASS_SEARCH_URL);
   const initialHtml = first.html;
   const cookie = first.cookie || parseCookies(readSetCookie(first.response.headers));
@@ -219,11 +297,14 @@ export async function fetchUcfClassSections(courseCode: string, term: string): P
     body: params
   });
   const parsedSections = parsePeopleSoftSectionRows(response.html, courseCode);
+  if (!options.includeSeatDetails) {
+    return parsedSections.map(toPublicSection);
+  }
   const seatDetails = await fetchSeatDetailsForSections(response.html, response.cookie, parsedSections);
   return parsedSections.map((section) => {
     const details = seatDetails.get(section.classNumber);
     const publicSection = toPublicSection(section);
-    return details ? { ...publicSection, ...details } : publicSection;
+    return details ? { ...publicSection, ...details, seatDetailsStatus: "live" } : { ...publicSection, seatDetailsStatus: "unavailable" };
   });
 }
 
@@ -245,6 +326,7 @@ function toPublicSection(section: ParsedPeopleSoftSection): Section {
     waitlistAvailable: section.waitlistAvailable,
     waitlistTotal: section.waitlistTotal,
     waitlistCapacity: section.waitlistCapacity,
+    seatDetailsStatus: section.seatDetailsStatus,
     mode: section.mode,
     campus: section.campus,
     meetings: section.meetings
@@ -286,6 +368,7 @@ function parsePeopleSoftSectionRows(html: string, courseCode: string): ParsedPeo
       professorName,
       seatsAvailable,
       seatsTotal,
+      seatDetailsStatus: "loading",
       mode: inferMode(field("INSTRUCT_MODE_DESCR") || rowText),
       campus: inferCampus(rowText),
       meetings
@@ -341,8 +424,10 @@ export function parseSeatDetails(html: string): SeatDetails {
   };
   const seatsTotal = numberField("SSR_CLS_DTL_WRK_ENRL_CAP") ?? 0;
   const enrollmentTotal = numberField("SSR_CLS_DTL_WRK_ENRL_TOT");
-  const waitlistCapacity = numberField("SSR_CLS_DTL_WRK_WAIT_CAP");
+  const rawWaitlistCapacity = numberField("SSR_CLS_DTL_WRK_WAIT_CAP");
   const waitlistTotal = numberField("SSR_CLS_DTL_WRK_WAIT_TOT");
+  const waitlistCapacity =
+    rawWaitlistCapacity !== undefined && rawWaitlistCapacity < 1000 ? rawWaitlistCapacity : undefined;
   const seatsAvailable = numberField("SSR_CLS_DTL_WRK_AVAILABLE_SEATS") ?? Math.max(0, seatsTotal - (enrollmentTotal ?? seatsTotal));
   return {
     seatsAvailable,

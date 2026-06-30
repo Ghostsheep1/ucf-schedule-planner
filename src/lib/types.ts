@@ -23,6 +23,7 @@ export type Section = {
   waitlistAvailable?: number;
   waitlistTotal?: number;
   waitlistCapacity?: number;
+  seatDetailsStatus?: "loading" | "live" | "unavailable";
   mode: InstructionMode;
   campus: Campus;
   meetings: Meeting[];

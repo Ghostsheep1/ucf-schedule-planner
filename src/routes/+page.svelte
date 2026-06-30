@@ -38,15 +38,20 @@
   let courses: Course[] = [];
   let sourceStatus = "Search UCF catalog and myUCF class search.";
   let loadingCourses = false;
+  let activeView: "planner" | "requirements" = "planner";
   let menuOpen = false;
   let scheduleDropdownOpen = false;
   let modalOpen = false;
   let aboutOpen = false;
   let notice = "";
   let expanded: Record<string, boolean> = {};
+  let hiddenCourses: Record<string, boolean> = {};
+  let sectionLoading: Record<string, boolean> = {};
+  let detailLoading: Record<string, boolean> = {};
   let hoveredSection: { course: Course; section: Section } | null = null;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let searchAbort: AbortController | undefined;
+  let searchRun = 0;
 
   let eventName = "";
   let eventDays: Exclude<DayOfWeek, "Online">[] = [];
@@ -68,6 +73,7 @@
   $: appliedFilterCount =
     activeGenEdFilters.length + Number(Boolean(filters.minCredits)) + Number(Boolean(filters.maxCredits)) + Number(activeOnlyOpen);
   $: filteredCourses = filterCourses(courses, query, filters, activeGenEdFilters, activeOnlyOpen);
+  $: visibleCourses = filteredCourses.filter((course) => !hiddenCourses[course.id]);
   $: baseBlocks = markConflicts([
     ...selectedPairs.flatMap(({ course, section, selection }) => sectionToBlocks(course, section, selection)),
     ...activeSchedule.customEvents.flatMap(eventToBlocks)
@@ -105,9 +111,13 @@
     const [term, cleaned = ""] = key.split("\n");
     if (searchTimer) clearTimeout(searchTimer);
     if (searchAbort) searchAbort.abort();
+    const run = (searchRun += 1);
 
     if (cleaned.length < 2) {
       courses = [];
+      hiddenCourses = {};
+      sectionLoading = {};
+      detailLoading = {};
       sourceStatus = "Enter at least 2 characters to search live UCF sources.";
       loadingCourses = false;
     } else {
@@ -116,12 +126,15 @@
       searchAbort = controller;
       searchTimer = setTimeout(async () => {
         try {
-          const response = await fetch(`/api/ucf/search?q=${encodeURIComponent(cleaned)}&term=${encodeURIComponent(term)}`, {
+          const response = await fetch(`/api/ucf/search?q=${encodeURIComponent(cleaned)}&term=${encodeURIComponent(term)}&sections=0`, {
             signal: controller.signal
           });
           const payload = (await response.json()) as { courses?: Course[]; sourceStatus?: string };
+          if (run !== searchRun) return;
           courses = payload.courses ?? [];
+          hiddenCourses = {};
           sourceStatus = payload.sourceStatus ?? "UCF source returned results.";
+          hydrateSections(courses, term, run);
         } catch (error) {
           if (!controller.signal.aborted) {
             courses = [];
@@ -130,7 +143,58 @@
         } finally {
           if (!controller.signal.aborted) loadingCourses = false;
         }
-      }, 350);
+      }, 120);
+    }
+  }
+
+  async function hydrateSections(sourceCourses: Course[], term: string, run: number) {
+    const compactQuery = query.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const baseQuery = compactQuery.replace(/[A-Z]+$/, "");
+    const prioritized = compactQuery.match(/^[A-Z]{2,4}[0-9]{4}[A-Z]{0,2}$/)
+      ? sourceCourses.filter((course) => course.code.toUpperCase().replace(/[^A-Z0-9]/g, "").startsWith(baseQuery)).slice(0, 4)
+      : sourceCourses.slice(0, 4);
+    prioritized.forEach((course) => {
+      sectionLoading = { ...sectionLoading, [course.id]: true };
+      void fetchCourseDetail(course, run);
+      void fetchSectionsForCourse(course, term, run, false);
+    });
+  }
+
+  async function fetchCourseDetail(course: Course, run: number) {
+    try {
+      const response = await fetch(`/api/ucf/course?course=${encodeURIComponent(course.code)}`);
+      const payload = (await response.json()) as { course?: Course | null };
+      if (run !== searchRun || !payload.course) return;
+      courses = courses.map((item) =>
+        item.id === course.id ? { ...payload.course!, sections: item.sections.length ? item.sections : payload.course!.sections } : item
+      );
+    } catch {
+      // Catalog rows are still usable while detailed credits/prereqs hydrate.
+    }
+  }
+
+  async function fetchSectionsForCourse(course: Course, term: string, run: number, details: boolean) {
+    try {
+      const response = await fetch(
+        `/api/ucf/sections?course=${encodeURIComponent(course.code)}&term=${encodeURIComponent(term)}&details=${details ? "1" : "0"}`
+      );
+      const payload = (await response.json()) as { sections?: Section[]; sourceStatus?: string };
+      if (run !== searchRun) return;
+      const sections = payload.sections ?? [];
+      courses = courses.map((item) => (item.id === course.id ? { ...item, sections } : item));
+      sourceStatus = details ? `Updated live seats for ${course.code}.` : `Loaded live sections for ${course.code}. Updating seats...`;
+      if (details) {
+        detailLoading = { ...detailLoading, [course.id]: false };
+      } else {
+        sectionLoading = { ...sectionLoading, [course.id]: false };
+        detailLoading = { ...detailLoading, [course.id]: true };
+        void fetchSectionsForCourse(course, term, run, true);
+      }
+    } catch (error) {
+      if (run !== searchRun) return;
+      if (details) detailLoading = { ...detailLoading, [course.id]: false };
+      else sectionLoading = { ...sectionLoading, [course.id]: false };
+      sourceStatus = error instanceof Error ? error.message : `Could not load ${course.code} sections.`;
     }
   }
 
@@ -157,10 +221,14 @@
     const normalized = text.trim().toLowerCase();
     const professorToken = normalized.match(/@("?)([^"]+)\1/)?.[2] ?? "";
     const textQuery = normalized.replace(/@("?)[^"]+\1/g, "").trim();
+    const compactQuery = textQuery.replace(/[^a-z0-9]/g, "");
     return sourceCourses.filter((course) => {
+      const compactCode = course.code.toLowerCase().replace(/[^a-z0-9]/g, "");
       const matchesText =
         !textQuery ||
         course.code.toLowerCase().includes(textQuery) ||
+        compactCode.includes(compactQuery) ||
+        compactQuery.includes(compactCode) ||
         course.title.toLowerCase().includes(textQuery) ||
         course.genEdTags.some((tag) => tag.toLowerCase().includes(textQuery));
       const matchesProfessor =
@@ -346,11 +414,29 @@
 <main class="min-h-screen bg-bgLight text-textLight">
   <nav class="fixed top-0 z-50 flex h-12 w-full items-center justify-between border-b-2 border-ucfGold bg-ucfBlack px-4 text-white">
     <div class="flex items-center gap-3">
-      <a href="/" class="grid h-8 w-8 place-items-center rounded-md bg-ucfGold font-black text-black" aria-label="Knight Planner home">KP</a>
+      <a href="/" class="grid h-9 w-9 place-items-center" aria-label="Knight Planner home">
+        <svg viewBox="0 0 64 64" class="h-9 w-9" aria-hidden="true">
+          <path d="M32 4 52 12v15c0 14.5-7.7 25-20 33C19.7 52 12 41.5 12 27V12L32 4Z" fill="#ffc904" />
+          <path d="M32 9 47 15v12c0 11.4-5.4 19.7-15 26.2C22.4 46.7 17 38.4 17 27V15l15-6Z" fill="#050505" />
+          <path d="M24 19h6v9l8-9h7l-10 11 11 15h-7l-8-11-1 1v10h-6V19Z" fill="#ffc904" />
+          <path d="M17 14 32 4l15 10-15 5-15-5Z" fill="#f7d97a" opacity=".9" />
+          <path d="M32 6v47" stroke="#ffc904" stroke-width="2" opacity=".35" />
+        </svg>
+      </a>
       <strong class="text-lg">Knight Planner</strong>
       <div class="hidden rounded-md border border-white/15 p-1 text-sm md:flex">
-        <a class="rounded bg-ucfGold px-3 py-1 font-bold text-black" href="/">Planner</a>
-        <button class="px-3 py-1 text-white/70 hover:text-white" on:click={() => (aboutOpen = true)}>Requirements</button>
+        <button
+          class={`rounded px-3 py-1 font-bold ${activeView === "planner" ? "bg-ucfGold text-black" : "text-white/70 hover:text-white"}`}
+          on:click={() => (activeView = "planner")}
+        >
+          Planner
+        </button>
+        <button
+          class={`rounded px-3 py-1 font-bold ${activeView === "requirements" ? "bg-ucfGold text-black" : "text-white/70 hover:text-white"}`}
+          on:click={() => (activeView = "requirements")}
+        >
+          Requirements
+        </button>
       </div>
     </div>
     <div class="flex items-center gap-2 text-sm">
@@ -367,6 +453,7 @@
     </div>
   {/if}
 
+  {#if activeView === "planner"}
   <div id="planner-container" class="fixed bottom-0 top-12 grid w-full grid-cols-1 overflow-y-auto px-3 lg:grid-cols-[22rem_minmax(0,1fr)] lg:overflow-hidden">
     <aside class="order-2 flex min-h-80 w-full flex-col border-t border-divBorderLight bg-bgLight lg:order-1 lg:h-full lg:border-r lg:border-t-0">
       <div id="planner-course-search" class="px-1 pt-1">
@@ -486,12 +573,26 @@
       </div>
 
       <section id="planner-search-results" class="custom-scrollbar min-h-[12.25rem] grow overflow-y-auto px-1 pb-2 lg:min-h-0">
-        {#each filteredCourses as course}
+        {#each visibleCourses as course}
           <article id={`results-${course.code}`} class="my-2 flex scroll-mt-2 flex-col rounded-lg border-2 border-outlineLight bg-bgSecondaryLight px-2">
             <button class="top-0 z-10 -mb-[2px] border-b-2 border-outlineLight bg-bgSecondaryLight px-2 py-2 text-left" on:click={() => (expanded = { ...expanded, [course.id]: !expanded[course.id] })}>
               <div class="flex flex-row align-middle">
                 <div class="grow text-left align-middle"><b>{course.code}</b></div>
-                <div class="grow text-right align-middle text-sm">Credits: {course.credits}</div>
+                <div class="grow text-right align-middle text-sm">
+                  Credits: {course.credits}
+                  <span
+                    class="ml-2 inline-flex h-6 w-6 items-center justify-center rounded border border-outlineLight font-black hover:bg-hoverLight"
+                    role="button"
+                    tabindex="0"
+                    title="Hide this course version"
+                    on:click|stopPropagation={() => (hiddenCourses = { ...hiddenCourses, [course.id]: true })}
+                    on:keydown|stopPropagation={(event) => {
+                      if (event.key === "Enter" || event.key === " ") hiddenCourses = { ...hiddenCourses, [course.id]: true };
+                    }}
+                  >
+                    ×
+                  </span>
+                </div>
               </div>
               <div class="max-w-[254px] text-sm xl:max-w-[314px]">{course.title}</div>
               <div class="flex w-full flex-row content-center text-left text-sm text-secCodesLight">
@@ -506,6 +607,12 @@
                 </div>
               {/if}
             </button>
+
+            {#if sectionLoading[course.id]}
+              <div class="border-t-2 border-outlineLight px-2 py-3 text-sm font-semibold text-black/60">Loading live class sections...</div>
+            {:else if course.sections.length === 0}
+              <div class="border-t-2 border-outlineLight px-2 py-3 text-sm font-semibold text-black/60">No live class sections returned yet.</div>
+            {/if}
 
             {#each course.sections as section}
               {@const chosen = selectedCourse(activeSchedule, course.id)}
@@ -529,10 +636,13 @@
                     {#if isChosen}<span class="float-right text-green-700">✓</span>{/if}
                   </div>
                   <div class="pb-1 text-xs font-medium">
-                    {#if section.seatsTotal > 0}
+                    {#if section.seatDetailsStatus === "loading" || detailLoading[course.id]}
+                      Seat and waitlist details loading...
+                    {:else if section.seatsTotal > 0}
                       {section.seatsAvailable} / {section.seatsTotal} seats available
                       {#if section.enrollmentTotal !== undefined} ({section.enrollmentTotal} enrolled){/if}
                       {#if section.waitlistTotal !== undefined && section.waitlistCapacity !== undefined} | Waitlist: {section.waitlistTotal} / {section.waitlistCapacity}{/if}
+                      {#if section.waitlistTotal !== undefined && section.waitlistCapacity === undefined} | Waitlist limit unavailable{/if}
                     {:else}
                       Seat count unavailable
                     {/if}
@@ -560,9 +670,9 @@
           </article>
         {/each}
 
-        {#if filteredCourses.length === 0}
+        {#if visibleCourses.length === 0}
           <div class="my-2 rounded-lg border-2 border-dashed border-outlineLight bg-bgSecondaryLight p-6 text-center text-sm text-black/60">
-            {query.trim().length < 2 ? "Search a real UCF course code, title, or professor." : "No live UCF courses match this search."}
+            {query.trim().length < 2 ? "Search a real UCF course code, title, or professor." : filteredCourses.length > 0 ? "All matching course versions are hidden. Search again to reset." : "No live UCF courses match this search."}
           </div>
         {/if}
       </section>
@@ -596,6 +706,33 @@
       <WeeklyCalendar {blocks} {removeSelection} {removeCustomEvent} />
     </section>
   </div>
+  {:else}
+    <section class="fixed bottom-0 top-12 w-full overflow-auto bg-bgLight px-4 py-5">
+      <div class="mx-auto max-w-5xl">
+        <div class="mb-4 flex items-center justify-between border-b-2 border-divBorderLight pb-3">
+          <div>
+            <h1 class="text-2xl font-black">Requirements</h1>
+            <p class="text-sm text-black/60">Track UCF planning buckets alongside your schedules.</p>
+          </div>
+          <button class="rounded-md bg-ucfBlack px-3 py-2 text-sm font-bold text-ucfGold" on:click={() => (activeView = "planner")}>
+            Back to Planner
+          </button>
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {#each ["GEP Communication", "GEP Math", "GEP Science", "State Core", "Major Prereqs", "Major Core", "Electives", "Honors / Research"] as bucket}
+            <article class="rounded-md border-2 border-outlineLight bg-bgSecondaryLight p-4">
+              <div class="mb-2 flex items-center justify-between">
+                <h2 class="font-black">{bucket}</h2>
+                <span class="rounded bg-ucfGold px-2 py-0.5 text-xs font-black text-black">Plan</span>
+              </div>
+              <p class="text-sm text-black/65">Use course search to add matching classes, then compare them against this bucket.</p>
+            </article>
+          {/each}
+        </div>
+      </div>
+    </section>
+  {/if}
 
   {#if modalOpen}
     <div class="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4">
@@ -642,7 +779,7 @@
           <button on:click={() => (aboutOpen = false)} aria-label="Close about">×</button>
         </div>
         <p class="mt-3 text-sm">
-          Knight Planner is a UCF course schedule planner modeled after Jupiterp. It uses live UCF Kuali catalog data,
+          Knight Planner is a UCF course schedule planner built by Henrique Silva Ribeiro. It uses live UCF Kuali catalog data,
           live myUCF class sections, and RateMyProfessors ratings.
         </p>
         <div class="mt-4 flex gap-2">
