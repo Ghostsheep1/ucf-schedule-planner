@@ -22,6 +22,42 @@ body {
 	font-family: 'Cabin', Arial, sans-serif;
 }
 
+html.dark body {
+	background: #151922;
+	color: #d9dfea;
+}
+
+html.dark .bg-bgLight {
+	background-color: #151922 !important;
+}
+
+html.dark .bg-bgSecondaryLight {
+	background-color: #141721 !important;
+}
+
+html.dark .text-textLight {
+	color: #d9dfea !important;
+}
+
+html.dark .text-black,
+html.dark .text-black\/60,
+html.dark .text-black\/65,
+html.dark .text-black\/70 {
+	color: #d9dfea !important;
+}
+
+html.dark .border-divBorderLight {
+	border-color: #252e3e !important;
+}
+
+html.dark .border-outlineLight {
+	border-color: #47526a !important;
+}
+
+html.dark .hover\:bg-hoverLight:hover {
+	background-color: #30374a !important;
+}
+
 html.minecraft body,
 html.minecraft * {
 	font-family: 'Minecraft', sans-serif;
