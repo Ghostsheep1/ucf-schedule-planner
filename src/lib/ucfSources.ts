@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { formatInstructorName } from "$lib/format";
 import type { Campus, Course, DayOfWeek, InstructionMode, Meeting, Section } from "$lib/types";
 
 export const UCF_CATALOG_ID = "66bcc88cf93938001c548373";
@@ -169,39 +170,50 @@ export async function fetchUcfProfessorCourses(professorQuery: string, term: str
   const cookie = first.cookie || parseCookies(readSetCookie(first.response.headers));
   if (!initialHtml.includes("CLASS_SRCH_WRK2_SSR_PB_CLASS_SRCH")) return [];
 
-  const searchName = name.split(" ").at(-1) ?? name;
-  const params = allFormFields(initialHtml);
-  params.set("ICAction", "CLASS_SRCH_WRK2_SSR_PB_CLASS_SRCH");
-  params.set("ICChanged", "1");
-  params.set("CLASS_SRCH_WRK2_INSTITUTION$31$", "UCF01");
-  params.set("CLASS_SRCH_WRK2_STRM$35$", termToStrm(term));
-  params.set("SSR_CLSRCH_WRK_LAST_NAME$9", searchName);
-  params.set("SSR_CLSRCH_WRK_ACAD_CAREER$3", "UGRD");
-  params.set("SSR_CLSRCH_WRK_SSR_OPEN_ONLY$chk$6", "N");
-  params.delete("SSR_CLSRCH_WRK_SSR_OPEN_ONLY$6");
-  params.set("FX_CLSSRCH_DER_FLAG$chk", "Y");
-  params.set("FX_CLSSRCH_DER_FLAG", "Y");
-
-  const response = await peopleSoftFetch(UCF_CLASS_SEARCH_URL, {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      cookie,
-      referer: UCF_CLASS_SEARCH_URL,
-      origin: "https://csprod-ss.net.ucf.edu",
-      "user-agent": "Mozilla/5.0 KnightPlanner/0.1"
-    },
-    body: params
-  });
-
   const normalizedName = name.toLowerCase();
-  return parsePeopleSoftCourseResults(response.html)
-    .map((course) => ({
-      ...course,
-      sections: course.sections.filter((section) => professorNameMatches(section.professorName, normalizedName))
-    }))
-    .filter((course) => course.sections.length > 0)
-    .slice(0, limit);
+  const courseMap = new Map<string, Course>();
+
+  for (const searchName of professorSearchNames(name)) {
+    const params = allFormFields(initialHtml);
+    params.set("ICAction", "CLASS_SRCH_WRK2_SSR_PB_CLASS_SRCH");
+    params.set("ICChanged", "1");
+    params.set("CLASS_SRCH_WRK2_INSTITUTION$31$", "UCF01");
+    params.set("CLASS_SRCH_WRK2_STRM$35$", termToStrm(term));
+    params.set("SSR_CLSRCH_WRK_LAST_NAME$9", searchName);
+    params.set("SSR_CLSRCH_WRK_ACAD_CAREER$3", "UGRD");
+    params.set("SSR_CLSRCH_WRK_SSR_OPEN_ONLY$chk$6", "N");
+    params.delete("SSR_CLSRCH_WRK_SSR_OPEN_ONLY$6");
+    params.set("FX_CLSSRCH_DER_FLAG$chk", "Y");
+    params.set("FX_CLSSRCH_DER_FLAG", "Y");
+
+    const response = await peopleSoftFetch(UCF_CLASS_SEARCH_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        cookie,
+        referer: UCF_CLASS_SEARCH_URL,
+        origin: "https://csprod-ss.net.ucf.edu",
+        "user-agent": "Mozilla/5.0 KnightPlanner/0.1"
+      },
+      body: params
+    });
+
+    for (const course of parsePeopleSoftCourseResults(response.html)) {
+      const sections = course.sections.filter((section) => professorNameMatches(section.professorName, normalizedName));
+      if (sections.length === 0) continue;
+      const existing = courseMap.get(course.code);
+      if (!existing) {
+        courseMap.set(course.code, { ...course, sections });
+      } else {
+        const seenSections = new Set(existing.sections.map((section) => section.id));
+        existing.sections = [...existing.sections, ...sections.filter((section) => !seenSections.has(section.id))];
+      }
+    }
+
+    if (courseMap.size >= limit) break;
+  }
+
+  return [...courseMap.values()].slice(0, limit);
 }
 
 function professorNameMatches(professorName: string, query: string) {
@@ -212,6 +224,15 @@ function professorNameMatches(professorName: string, query: string) {
 
   const words = fullName.split(/[^a-z]+/).filter(Boolean);
   return words.some((word) => (normalizedQuery.length >= 4 ? word === normalizedQuery : word.startsWith(normalizedQuery)));
+}
+
+function professorSearchNames(name: string) {
+  const clean = formatInstructorName(name);
+  const words = clean.split(/\s+/).filter(Boolean);
+  const candidates = [clean, words.at(-1) ?? clean, words[0] ?? clean, ...words];
+  const firstLetter = (words.at(-1) ?? clean).slice(0, 1);
+  if (firstLetter) candidates.push(firstLetter);
+  return [...new Set(candidates.filter(Boolean))];
 }
 
 async function coursesForSubject(subject: string, limit: number, options: CatalogSearchOptions) {
@@ -543,7 +564,7 @@ function parsePeopleSoftSectionRow($: cheerio.CheerioAPI, row: Parameters<cheeri
   const rowText = $(row).text().replace(/\s+/g, " ").trim();
   const sectionLabel = field("MTG_CLASSNAME") || rowText;
   const sectionNumber = sectionLabel.match(/\b([A-Z0-9]+)-(LEC|LAB|DIS|SEM|IND|CLN|RSC)\b/i)?.[1] ?? String(fallbackIndex + 1).padStart(4, "0");
-  const professorName = field("MTG_INSTR") || "TBA";
+  const professorName = formatInstructorName(field("MTG_INSTR") || "TBA");
   const room = field("MTG_ROOM");
   const meetings = parseMeetingText(rowText);
   if (room && meetings.length > 0) {
