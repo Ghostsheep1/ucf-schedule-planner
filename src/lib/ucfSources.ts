@@ -198,10 +198,20 @@ export async function fetchUcfProfessorCourses(professorQuery: string, term: str
   return parsePeopleSoftCourseResults(response.html)
     .map((course) => ({
       ...course,
-      sections: course.sections.filter((section) => section.professorName.toLowerCase().includes(normalizedName))
+      sections: course.sections.filter((section) => professorNameMatches(section.professorName, normalizedName))
     }))
     .filter((course) => course.sections.length > 0)
     .slice(0, limit);
+}
+
+function professorNameMatches(professorName: string, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  const fullName = professorName.toLowerCase().replace(/\s+/g, " ");
+  if (!normalizedQuery) return true;
+  if (normalizedQuery.includes(" ")) return fullName.includes(normalizedQuery);
+
+  const words = fullName.split(/[^a-z]+/).filter(Boolean);
+  return words.some((word) => (normalizedQuery.length >= 4 ? word === normalizedQuery : word.startsWith(normalizedQuery)));
 }
 
 async function coursesForSubject(subject: string, limit: number, options: CatalogSearchOptions) {
