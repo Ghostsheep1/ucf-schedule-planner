@@ -160,6 +160,50 @@ export async function searchUcfCatalog(query: string, limit = 10, options: Catal
   return allCourses.slice(0, limit);
 }
 
+export async function fetchUcfProfessorCourses(professorQuery: string, term: string, limit = 30): Promise<Course[]> {
+  const name = professorQuery.trim().replace(/^@/, "").replace(/\s+/g, " ");
+  if (name.length < 2) return [];
+
+  const first = await peopleSoftFetch(UCF_CLASS_SEARCH_URL);
+  const initialHtml = first.html;
+  const cookie = first.cookie || parseCookies(readSetCookie(first.response.headers));
+  if (!initialHtml.includes("CLASS_SRCH_WRK2_SSR_PB_CLASS_SRCH")) return [];
+
+  const searchName = name.split(" ").at(-1) ?? name;
+  const params = allFormFields(initialHtml);
+  params.set("ICAction", "CLASS_SRCH_WRK2_SSR_PB_CLASS_SRCH");
+  params.set("ICChanged", "1");
+  params.set("CLASS_SRCH_WRK2_INSTITUTION$31$", "UCF01");
+  params.set("CLASS_SRCH_WRK2_STRM$35$", termToStrm(term));
+  params.set("SSR_CLSRCH_WRK_LAST_NAME$9", searchName);
+  params.set("SSR_CLSRCH_WRK_ACAD_CAREER$3", "UGRD");
+  params.set("SSR_CLSRCH_WRK_SSR_OPEN_ONLY$chk$6", "N");
+  params.delete("SSR_CLSRCH_WRK_SSR_OPEN_ONLY$6");
+  params.set("FX_CLSSRCH_DER_FLAG$chk", "Y");
+  params.set("FX_CLSSRCH_DER_FLAG", "Y");
+
+  const response = await peopleSoftFetch(UCF_CLASS_SEARCH_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      cookie,
+      referer: UCF_CLASS_SEARCH_URL,
+      origin: "https://csprod-ss.net.ucf.edu",
+      "user-agent": "Mozilla/5.0 KnightPlanner/0.1"
+    },
+    body: params
+  });
+
+  const normalizedName = name.toLowerCase();
+  return parsePeopleSoftCourseResults(response.html)
+    .map((course) => ({
+      ...course,
+      sections: course.sections.filter((section) => section.professorName.toLowerCase().includes(normalizedName))
+    }))
+    .filter((course) => course.sections.length > 0)
+    .slice(0, limit);
+}
+
 async function coursesForSubject(subject: string, limit: number, options: CatalogSearchOptions) {
   const catalogCourses = await kualiFetch<KualiCourse[]>(`/courses/${UCF_CATALOG_ID}`);
   const matches = catalogCourses
@@ -443,39 +487,76 @@ function parsePeopleSoftSectionRows(html: string, courseCode: string): ParsedPeo
   const sectionRows = $("[id^='win0divSSR_CLSRSLT_WRK_GROUPBOX3$']").toArray();
   if (sectionRows.length === 0) return [];
 
-  return sectionRows.map((row, index) => {
-    const field = (id: string) => $(row).find(`[id='${id}$${index}']`).first().text().replace(/\s+/g, " ").trim();
-    const detailAction = $(row).find(`[id='MTG_CLASS_NBR$${index}']`).attr("id") || `MTG_CLASS_NBR$${index}`;
-    const classNumber = field("MTG_CLASS_NBR");
-    const rowText = $(row).text().replace(/\s+/g, " ").trim();
-    const sectionLabel = field("MTG_CLASSNAME") || rowText;
-    const sectionNumber = sectionLabel.match(/\b([A-Z0-9]+)-(LEC|LAB|DIS|SEM|IND|CLN|RSC)\b/i)?.[1] ?? String(index + 1).padStart(4, "0");
-    const professorName = field("MTG_INSTR") || "TBA";
-    const room = field("MTG_ROOM");
-    const seatsAvailable = 0;
-    const seatsTotal = 0;
-    const meetings = parseMeetingText(rowText);
-    if (room && meetings.length > 0) {
-      const [building, ...roomParts] = room.split(/\s+/);
-      meetings.forEach((meeting) => {
-        meeting.building = building;
-        meeting.room = roomParts.join(" ");
-      });
-    }
-    return {
-      id: `${courseCode}-${classNumber || sectionNumber}`,
-      classNumber,
-      detailAction,
-      sectionNumber,
-      professorName,
-      seatsAvailable,
-      seatsTotal,
-      seatDetailsStatus: "loading",
-      mode: inferMode(field("INSTRUCT_MODE_DESCR") || rowText),
-      campus: inferCampus(rowText),
-      meetings
-    };
-  });
+  return sectionRows.map((row, fallbackIndex) => parsePeopleSoftSectionRow($, row, courseCode, fallbackIndex));
+}
+
+function parsePeopleSoftCourseResults(html: string): Course[] {
+  const $ = cheerio.load(html);
+  return $("[id^='win0divSSR_CLSRSLT_WRK_GROUPBOX2$']")
+    .toArray()
+    .flatMap((group, groupIndex) => {
+      const header =
+        $(group).find(`[id='win0divSSR_CLSRSLT_WRK_GROUPBOX2GP$${groupIndex}']`).first().text().replace(/\s+/g, " ").trim() ||
+        $(group).text().replace(/\s+/g, " ").trim();
+      const match = header.match(/\b([A-Z]{2,4})\s+([0-9]{4}[A-Z]?)\s+-\s+(.+?)(?:\s+Class\s+Section|\s*$)/);
+      if (!match) return [];
+
+      const code = `${match[1]}${match[2]}`;
+      const sections = $(group)
+        .find("[id^='win0divSSR_CLSRSLT_WRK_GROUPBOX3$']")
+        .toArray()
+        .map((row, fallbackIndex) => parsePeopleSoftSectionRow($, row, code, fallbackIndex));
+
+      return [
+        {
+          id: code,
+          code,
+          title: match[3].trim(),
+          credits: 0,
+          genEdTags: [],
+          description: "",
+          prerequisites: "See UCF catalog.",
+          catalogUrl: UCF_CATALOG_REFERER,
+          scheduleUrl: UCF_CLASS_SEARCH_URL,
+          sections
+        }
+      ];
+    });
+}
+
+function parsePeopleSoftSectionRow($: cheerio.CheerioAPI, row: Parameters<cheerio.CheerioAPI>[0], courseCode: string, fallbackIndex: number): ParsedPeopleSoftSection {
+  const rowId = $(row).attr("id") ?? "";
+  const rowIndex = rowId.match(/\$(\d+)$/)?.[1] ?? String(fallbackIndex);
+  const field = (id: string) => $(row).find(`[id='${id}$${rowIndex}']`).first().text().replace(/\s+/g, " ").trim();
+  const detailAction = $(row).find(`[id='MTG_CLASS_NBR$${rowIndex}']`).attr("id") || `MTG_CLASS_NBR$${rowIndex}`;
+  const classNumber = field("MTG_CLASS_NBR");
+  const rowText = $(row).text().replace(/\s+/g, " ").trim();
+  const sectionLabel = field("MTG_CLASSNAME") || rowText;
+  const sectionNumber = sectionLabel.match(/\b([A-Z0-9]+)-(LEC|LAB|DIS|SEM|IND|CLN|RSC)\b/i)?.[1] ?? String(fallbackIndex + 1).padStart(4, "0");
+  const professorName = field("MTG_INSTR") || "TBA";
+  const room = field("MTG_ROOM");
+  const meetings = parseMeetingText(rowText);
+  if (room && meetings.length > 0) {
+    const rooms = room.match(/[A-Z0-9]{2,5}\s+[O0-9A-Z-]{2,}/g) ?? [room];
+    meetings.forEach((meeting, index) => {
+      const [building, ...roomParts] = (rooms[index] ?? rooms[0]).split(/\s+/);
+      meeting.building = building;
+      meeting.room = roomParts.join(" ");
+    });
+  }
+  return {
+    id: `${courseCode}-${classNumber || sectionNumber}`,
+    classNumber,
+    detailAction,
+    sectionNumber,
+    professorName,
+    seatsAvailable: 0,
+    seatsTotal: 0,
+    seatDetailsStatus: "loading",
+    mode: inferMode(field("INSTRUCT_MODE_DESCR") || rowText),
+    campus: inferCampus(rowText),
+    meetings
+  };
 }
 
 async function fetchSeatDetailsForSections(html: string, cookie: string, sections: ParsedPeopleSoftSection[]) {

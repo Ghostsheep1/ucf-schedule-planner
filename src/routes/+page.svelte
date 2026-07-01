@@ -78,7 +78,7 @@
   let activeView: "planner" | "generator" = "planner";
   let menuOpen = false;
   let aboutMenuOpen = false;
-  let infoPage: "terms" | "privacy" | "changelog" | null = null;
+  let infoPage: "about" | "terms" | "privacy" | "changelog" | null = null;
   let darkMode = false;
   let scheduleDropdownOpen = false;
   let modalOpen = false;
@@ -86,8 +86,11 @@
   let expanded: Record<string, boolean> = {};
   let hiddenCourses: Record<string, boolean> = {};
   let sectionLoading: Record<string, boolean> = {};
+  let sectionLoaded: Record<string, boolean> = {};
   let detailLoading: Record<string, boolean> = {};
   let hoveredSection: { course: Course; section: Section } | null = null;
+  let searchFocused = false;
+  let suggestionsDismissed = false;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let searchAbort: AbortController | undefined;
   let searchRun = 0;
@@ -123,8 +126,8 @@
   $: appliedFilterCount =
     activeGenEdFilters.length + Number(Boolean(filters.minCredits)) + Number(Boolean(filters.maxCredits)) + Number(activeOnlyOpen);
   $: filteredCourses = filterCourses(courses, query, filters, activeGenEdFilters, activeOnlyOpen);
-  $: visibleCourses = filteredCourses.filter((course) => !hiddenCourses[course.id]);
-  $: departmentSuggestions = departmentMatches(query);
+  $: visibleCourses = filteredCourses.filter((course) => !hiddenCourses[course.id] && (!sectionLoaded[course.id] || course.sections.length > 0 || sectionLoading[course.id]));
+  $: departmentSuggestions = searchFocused && !suggestionsDismissed ? departmentMatches(query) : [];
   $: baseBlocks = markConflicts([
     ...selectedPairs.flatMap(({ course, section, selection }) => sectionToBlocks(course, section, selection)),
     ...activeSchedule.customEvents.flatMap(eventToBlocks)
@@ -166,17 +169,11 @@
     if (searchTimer) clearTimeout(searchTimer);
     if (searchAbort) searchAbort.abort();
     const run = (searchRun += 1);
-    const professorOnly = cleaned.trim().startsWith("@");
-
-    if (professorOnly) {
-      sourceStatus = courses.length
-        ? "Filtering loaded sections by professor. Add a UCF department or course before @professor to load more."
-        : "Add a UCF department or course before @professor, for example PHY @stolbov.";
-      loadingCourses = false;
-    } else if (cleaned.length < 2) {
+    if (cleaned.length < 2) {
       courses = [];
       hiddenCourses = {};
       sectionLoading = {};
+      sectionLoaded = {};
       detailLoading = {};
       sourceStatus = "Enter at least 2 characters to search live UCF sources.";
       loadingCourses = false;
@@ -186,13 +183,14 @@
       searchAbort = controller;
       searchTimer = setTimeout(async () => {
         try {
-          const response = await fetch(`/api/ucf/search?q=${encodeURIComponent(cleaned)}&term=${encodeURIComponent(term)}&sections=0`, {
+          const response = await fetch(`/api/ucf/search?q=${encodeURIComponent(cleaned)}&term=${encodeURIComponent(term)}&sections=0&limit=80`, {
             signal: controller.signal
           });
           const payload = (await response.json()) as { courses?: Course[]; sourceStatus?: string };
           if (run !== searchRun) return;
           courses = payload.courses ?? [];
           hiddenCourses = {};
+          sectionLoaded = {};
           sourceStatus = payload.sourceStatus ?? "UCF source returned results.";
           hydrateSections(courses, term, run);
         } catch (error) {
@@ -212,7 +210,7 @@
     const professorToken = query.match(/@("?)([^"]+)\1/)?.[2]?.trim() ?? "";
     const compactQuery = catalogPart.toUpperCase().replace(/[^A-Z0-9]/g, "");
     const baseQuery = compactQuery.replace(/[A-Z]+$/, "");
-    const hydrationLimit = professorToken ? 12 : 4;
+    const hydrationLimit = professorToken ? 24 : 12;
     const prioritized = compactQuery.match(/^[A-Z]{2,4}[0-9]{4}[A-Z]{0,2}$/)
       ? sourceCourses.filter((course) => course.code.toUpperCase().replace(/[^A-Z0-9]/g, "").startsWith(baseQuery)).slice(0, hydrationLimit)
       : sourceCourses.slice(0, hydrationLimit);
@@ -241,10 +239,10 @@
       const payload = (await response.json()) as { course?: Course | null };
       if (run !== searchRun || !payload.course) return;
       courses = courses.map((item) =>
-        item.id === course.id ? { ...payload.course!, sections: item.sections.length ? item.sections : payload.course!.sections } : item
+        item.id === course.id ? { ...payload.course!, id: item.id, sections: item.sections.length ? item.sections : payload.course!.sections } : item
       );
       generatorCourses = generatorCourses.map((item) =>
-        item.id === course.id ? { ...payload.course!, sections: item.sections.length ? item.sections : payload.course!.sections } : item
+        item.id === course.id ? { ...payload.course!, id: item.id, sections: item.sections.length ? item.sections : payload.course!.sections } : item
       );
     } catch {
       // Catalog rows are still usable while detailed credits/prereqs hydrate.
@@ -261,6 +259,7 @@
       const sections = payload.sections ?? [];
       courses = courses.map((item) => (item.id === course.id ? { ...item, sections } : item));
       generatorCourses = generatorCourses.map((item) => (item.id === course.id ? { ...item, sections } : item));
+      sectionLoaded = { ...sectionLoaded, [course.id]: true };
       sourceStatus = details ? `Updated live seats for ${course.code}.` : `Loaded live sections for ${course.code}. Updating seats...`;
       if (details) {
         detailLoading = { ...detailLoading, [course.id]: false };
@@ -273,6 +272,7 @@
       if (run !== searchRun) return;
       if (details) detailLoading = { ...detailLoading, [course.id]: false };
       else sectionLoading = { ...sectionLoading, [course.id]: false };
+      sectionLoaded = { ...sectionLoaded, [course.id]: true };
       sourceStatus = error instanceof Error ? error.message : `Could not load ${course.code} sections.`;
     }
   }
@@ -325,13 +325,26 @@
   }
 
   function departmentMatches(text: string) {
-    const clean = text.trim().toUpperCase().replace(/[^A-Z]/g, "");
-    if (!clean || /[0-9@]/.test(clean) || clean.length > 4) return [];
-    return departments.filter(([code, name]) => code.startsWith(clean) || name.toUpperCase().includes(clean)).slice(0, 10);
+    const raw = text.trim();
+    const clean = raw.toUpperCase().replace(/[^A-Z]/g, "");
+    if (!clean || /[0-9@]/.test(raw) || raw.endsWith(" ") || clean.length > 4) return [];
+    return departments.filter(([code, name]) => code.startsWith(clean) || name.toUpperCase().includes(clean)).slice(0, 40);
   }
 
   function selectDepartment(code: string) {
-    query = `${code} `;
+    query = code;
+    suggestionsDismissed = true;
+  }
+
+  function handleSearchInput() {
+    suggestionsDismissed = false;
+  }
+
+  function handleSearchKeydown(event: KeyboardEvent) {
+    if (event.key === "Enter" && departmentSuggestions[0]) {
+      event.preventDefault();
+      selectDepartment(departmentSuggestions[0][0]);
+    }
   }
 
   function setTheme(nextDark: boolean) {
@@ -488,7 +501,16 @@
   }
 
   function addSection(course: Course, section: Section) {
-    const replacing = selectedCourse(activeSchedule, course.id);
+    const duplicate = activeSchedule.selections.find(
+      (selection) => selection.course?.code === course.code && selection.sectionId === section.id && selection.courseId !== course.id
+    );
+    if (duplicate) {
+      notice = `${course.code} section ${section.sectionNumber} is already on this schedule.`;
+      return;
+    }
+    const replacing =
+      selectedCourse(activeSchedule, course.id) ??
+      activeSchedule.selections.find((selection) => selection.course?.code === course.code || selection.courseId === course.code);
     if (replacing?.sectionId === section.id) {
       removeSelection(replacing.id);
       notice = `${course.code} section ${section.sectionNumber} removed.`;
@@ -734,8 +756,8 @@
         </button>
       </div>
       <a class="hidden rounded-md px-2 py-1 hover:bg-white/10 sm:inline-flex" href={issueMailto}>Report an issue</a>
-      <div class="relative hidden sm:block">
-        <button class="inline-flex items-center rounded-md px-2 py-1 hover:bg-white/10" on:click={() => (aboutMenuOpen = !aboutMenuOpen)}>
+      <div class="relative hidden sm:block" role="presentation" on:mouseenter={() => (aboutMenuOpen = true)} on:mouseleave={() => (aboutMenuOpen = false)}>
+        <button class={`inline-flex items-center rounded-md px-2 py-1 hover:bg-white/10 ${infoPage === "about" ? "text-ucfGold underline decoration-ucfGold decoration-2 underline-offset-4" : ""}`} on:click={() => (infoPage = "about")}>
           About
           <svg class={`ml-1 h-4 w-4 transition-transform ${aboutMenuOpen ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
             <path d="m6 9 6 6 6-6" />
@@ -743,9 +765,9 @@
         </button>
         {#if aboutMenuOpen}
           <div class="absolute right-0 mt-2 w-44 rounded-md border border-outlineDark bg-bgDark p-2 text-base font-bold text-textDark shadow-xl">
-            <button class="block w-full rounded px-3 py-2 text-left text-ucfGold underline decoration-ucfGold decoration-2 underline-offset-4 hover:bg-hoverDark" on:click={() => (infoPage = "terms", aboutMenuOpen = false)}>Terms of Use</button>
-            <button class="block w-full rounded px-3 py-2 text-left hover:bg-hoverDark" on:click={() => (infoPage = "privacy", aboutMenuOpen = false)}>Privacy Policy</button>
-            <button class="block w-full rounded px-3 py-2 text-left hover:bg-hoverDark" on:click={() => (infoPage = "changelog", aboutMenuOpen = false)}>Changelog</button>
+            <button class={`block w-full rounded px-3 py-2 text-left hover:bg-hoverDark ${infoPage === "terms" ? "text-ucfGold underline decoration-ucfGold decoration-2 underline-offset-4" : ""}`} on:click={() => (infoPage = "terms", aboutMenuOpen = false)}>Terms of Use</button>
+            <button class={`block w-full rounded px-3 py-2 text-left hover:bg-hoverDark ${infoPage === "privacy" ? "text-ucfGold underline decoration-ucfGold decoration-2 underline-offset-4" : ""}`} on:click={() => (infoPage = "privacy", aboutMenuOpen = false)}>Privacy Policy</button>
+            <button class={`block w-full rounded px-3 py-2 text-left hover:bg-hoverDark ${infoPage === "changelog" ? "text-ucfGold underline decoration-ucfGold decoration-2 underline-offset-4" : ""}`} on:click={() => (infoPage = "changelog", aboutMenuOpen = false)}>Changelog</button>
           </div>
         {/if}
       </div>
@@ -844,11 +866,15 @@
               bind:value={query}
               placeholder="Search courses (e.g. 'COP3502C') or @professor"
               class="w-full rounded-lg border-2 border-outlineLight bg-transparent px-2 py-0 text-xl placeholder:text-base lg:text-base lg:placeholder:text-sm"
+              on:input={handleSearchInput}
+              on:keydown={handleSearchKeydown}
+              on:focus={() => (searchFocused = true)}
+              on:blur={() => setTimeout(() => (searchFocused = false), 120)}
             />
             {#if departmentSuggestions.length > 0}
-              <div class="absolute left-0 right-0 z-30 mt-1 rounded-lg border-2 border-outlineLight bg-bgLight p-2 shadow-xl dark:border-outlineDark dark:bg-bgSecondaryDark">
+              <div class="custom-scrollbar absolute left-0 right-0 z-30 mt-1 max-h-72 overflow-auto rounded-lg border-2 border-outlineLight bg-bgLight p-2 shadow-xl dark:border-outlineDark dark:bg-bgSecondaryDark">
                 {#each departmentSuggestions as [code, name]}
-                  <button class="grid w-full grid-cols-[5rem_1fr] rounded px-2 py-1 text-left hover:bg-hoverLight dark:hover:bg-hoverDark" on:click={() => selectDepartment(code)}>
+                  <button class="grid w-full grid-cols-[5rem_1fr] rounded px-2 py-1 text-left hover:bg-hoverLight dark:hover:bg-hoverDark" on:mousedown|preventDefault={() => selectDepartment(code)}>
                     <b>{code}</b>
                     <span class="italic">{name}</span>
                   </button>
@@ -954,13 +980,18 @@
             </button>
 
             {#if sectionLoading[course.id]}
-              <div class="border-t-2 border-outlineLight px-2 py-3 text-sm font-semibold text-black/60">Loading live class sections...</div>
+              <div class="flex items-center gap-2 border-t-2 border-outlineLight px-2 py-3 text-sm font-semibold text-black/60 dark:text-textDark/70">
+                <span class="h-4 w-4 animate-spin rounded-full border-2 border-secCodesLight border-t-ucfGold"></span>
+                Loading live class sections...
+              </div>
             {:else if course.sections.length === 0}
-              <div class="border-t-2 border-outlineLight px-2 py-3 text-sm font-semibold text-black/60">No live class sections returned yet.</div>
+              <div class="border-t-2 border-outlineLight px-2 py-3 text-sm font-semibold text-black/60 dark:text-textDark/70">
+                {sectionLoaded[course.id] ? "No live sections for this term." : "Live sections will load as results hydrate."}
+              </div>
             {/if}
 
             {#each course.sections as section}
-              {@const chosen = selectedCourse(activeSchedule, course.id)}
+              {@const chosen = selectedCourse(activeSchedule, course.id) ?? activeSchedule.selections.find((selection) => selection.course?.code === course.code)}
               {@const isChosen = chosen?.sectionId === section.id}
               {@const conflicts = !isChosen && candidateConflicts(activeSchedule, course, section, course.id)}
               <button
@@ -987,7 +1018,7 @@
                       {section.seatsAvailable} / {section.seatsTotal} seats available
                       {#if section.enrollmentTotal !== undefined} ({section.enrollmentTotal} enrolled){/if}
                       {#if section.waitlistTotal !== undefined && section.waitlistCapacity !== undefined} | Waitlist: {section.waitlistTotal} / {section.waitlistCapacity}{/if}
-                      {#if section.waitlistTotal !== undefined && section.waitlistCapacity === undefined} | Waitlist limit unavailable{/if}
+                      {#if section.waitlistTotal !== undefined && section.waitlistCapacity === undefined && section.waitlistTotal > 0} | Waitlist size: {section.waitlistTotal}{/if}
                     {:else}
                       Seat count unavailable
                     {/if}
@@ -1206,13 +1237,20 @@
         <div class="flex items-center gap-3">
           <button class="rounded-md bg-ucfBlack px-3 py-2 text-sm font-bold text-ucfGold" on:click={() => (infoPage = null)}>Back</button>
           <h1 class="text-2xl font-black">
-            {infoPage === "terms" ? "Terms of Use" : infoPage === "privacy" ? "Privacy Policy" : "Changelog"}
+            {infoPage === "about" ? "About Knight Planner" : infoPage === "terms" ? "Terms of Use" : infoPage === "privacy" ? "Privacy Policy" : "Changelog"}
           </h1>
         </div>
         <span class="text-sm font-bold text-secCodesLight">Knight Planner v{appVersion}</span>
       </div>
 
-      {#if infoPage === "terms"}
+      {#if infoPage === "about"}
+        <div class="space-y-5">
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">About Knight Planner</h2><p class="mt-2">Knight Planner is a UCF schedule planner built by Henrique Silva Ribeiro. It helps students search live UCF catalog courses, inspect myUCF sections, compare seats and times, check RateMyProfessors summaries, build schedules, generate combinations, and export calendar files.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Data Sources</h2><p class="mt-2">Course information comes from UCF catalog data. Live sections, times, rooms, instructors, seats, and waitlist totals come from myUCF class search when UCF returns them. Professor ratings are pulled from RateMyProfessors.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Open Source</h2><p class="mt-2">The project is open source on <a class="text-ucfDarkGold underline" href={githubUrl} target="_blank" rel="noreferrer">GitHub</a>. Reports and ideas can be sent through <a class="text-ucfDarkGold underline" href={issueMailto}>hsribeiro1@gmail.com</a>.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Status</h2><p class="mt-2">Knight Planner is currently version {appVersion}. It is still being polished before the full release, so official enrollment choices should always be verified in UCF systems.</p></section>
+        </div>
+      {:else if infoPage === "terms"}
         <div class="space-y-5">
           <p class="font-semibold text-secCodesLight">Last updated: June 30, 2026</p>
           <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Introduction</h2><p class="mt-2">Knight Planner is a UCF schedule planning tool built by Henrique Silva Ribeiro. It is not affiliated with, endorsed by, sponsored by, or operated by the University of Central Florida. By using Knight Planner, you agree that it is a planning aid and that official enrollment decisions must be completed through official UCF systems.</p></section>

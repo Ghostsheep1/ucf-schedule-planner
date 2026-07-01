@@ -1,5 +1,5 @@
 import { json } from "@sveltejs/kit";
-import { fetchUcfClassSections, searchUcfCatalog } from "$lib/ucfSources";
+import { fetchUcfClassSections, fetchUcfProfessorCourses, searchUcfCatalog } from "$lib/ucfSources";
 import type { RequestHandler } from "./$types";
 
 export const GET: RequestHandler = async ({ url }) => {
@@ -7,6 +7,7 @@ export const GET: RequestHandler = async ({ url }) => {
   const term = url.searchParams.get("term") ?? "Fall 2026";
   const includeSections = url.searchParams.get("sections") === "1";
   const includeDetails = url.searchParams.get("details") === "1";
+  const requestedLimit = Number(url.searchParams.get("limit") ?? "0");
 
   if (query.length < 2) {
     return json({ courses: [], sourceStatus: "Enter at least 2 characters." });
@@ -15,15 +16,18 @@ export const GET: RequestHandler = async ({ url }) => {
   const professorToken = query.match(/@("?)([^"]+)\1/)?.[2]?.trim() ?? "";
   const catalogQuery = query.replace(/@("?)[^"]+\1/g, "").trim();
 
-  if (professorToken && catalogQuery.length < 2) {
-    return json({
-      courses: [],
-      sourceStatus: "Add a UCF department or course before @professor, for example PHY @stolbov, so Knight Planner knows which live sections to inspect."
-    });
-  }
-
   try {
-    const catalogCourses = await searchUcfCatalog(catalogQuery || query, 10, { includeDetails: includeSections });
+    if (professorToken && catalogQuery.length < 2) {
+      const courses = await fetchUcfProfessorCourses(professorToken, term, requestedLimit || 40);
+      return json({
+        courses,
+        sourceStatus: courses.length ? `Live myUCF sections matching @${professorToken}.` : `No live myUCF sections found for @${professorToken}.`
+      });
+    }
+
+    const catalogOnly = catalogQuery || query;
+    const limit = requestedLimit || (/^[A-Za-z]{2,5}\s*$/.test(catalogOnly) ? 80 : 20);
+    const catalogCourses = await searchUcfCatalog(catalogOnly, limit, { includeDetails: includeSections });
     const courses = includeSections
       ? await Promise.all(
           catalogCourses.map(async (course) => ({
