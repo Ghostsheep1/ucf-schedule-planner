@@ -1,12 +1,21 @@
 import { json } from "@sveltejs/kit";
 import { RMP_UCF_SCHOOL_ID, fetchUcfClassSections, fetchUcfProfessorCourses, searchUcfCatalog } from "$lib/ucfSources";
+import { cached } from "$lib/server/cache";
+import type { Course } from "$lib/types";
 import type { RequestHandler } from "./$types";
+
+const tenMinutes = 10 * 60 * 1000;
 
 type RmpTeacher = {
   node?: {
     firstName?: string;
     lastName?: string;
   };
+};
+
+type ExpandedProfessorName = {
+  fullName: string;
+  searchHints: string[];
 };
 
 export const GET: RequestHandler = async ({ url }) => {
@@ -24,12 +33,16 @@ export const GET: RequestHandler = async ({ url }) => {
   const catalogQuery = query.replace(/@("?)[^"]+\1/g, "").trim();
 
   try {
+    const payload = await cached(
+      `search:${query}:${term}:${includeSections}:${includeDetails}:${requestedLimit}`,
+      tenMinutes,
+      async (): Promise<{ courses: Course[]; sourceStatus: string }> => {
     if (professorToken && catalogQuery.length < 2) {
       const courses = await fetchUcfProfessorCoursesWithFallbacks(professorToken, term, requestedLimit || 40);
-      return json({
+      return {
         courses,
         sourceStatus: courses.length ? `Live myUCF sections matching @${professorToken}.` : `No live myUCF sections found for @${professorToken}.`
-      });
+      };
     }
 
     const catalogOnly = catalogQuery || query;
@@ -44,10 +57,13 @@ export const GET: RequestHandler = async ({ url }) => {
         )
       : catalogCourses;
 
-    return json({
+    return {
       courses,
       sourceStatus: includeSections ? "Live UCF catalog and myUCF section results." : "Live UCF catalog results. Loading sections..."
-    });
+    };
+      }
+    );
+    return json(payload);
   } catch (error) {
     return json(
       {
@@ -60,24 +76,36 @@ export const GET: RequestHandler = async ({ url }) => {
 };
 
 async function fetchUcfProfessorCoursesWithFallbacks(professorToken: string, term: string, limit: number) {
-  const direct = await fetchUcfProfessorCourses(professorToken, term, limit);
+  const expandedNamesPromise = expandProfessorNames(professorToken);
+  const directPromise = fetchUcfProfessorCourses(professorToken, term, limit);
+  const expandedResultsPromise = expandedNamesPromise.then((expandedNames) =>
+    Promise.all(expandedNames.map((expandedName) => fetchUcfProfessorCourses(expandedName.fullName, term, limit, expandedName.searchHints)))
+  );
+  const direct = await directPromise;
   if (direct.length > 0) return direct;
 
+  const expandedResults = await expandedResultsPromise;
+  return expandedResults.find((courses) => courses.length > 0) ?? [];
+}
+
+async function expandProfessorNames(professorToken: string) {
   try {
     const rmp = await import("ratemyprofessor-api");
     const results = (await rmp.searchProfessorsAtSchoolId(professorToken, RMP_UCF_SCHOOL_ID)) as RmpTeacher[];
-    const expandedNames = results
-      .map((result) => [result.node?.firstName, result.node?.lastName].filter(Boolean).join(" ").trim())
-      .filter(Boolean)
+    return results
+      .map((result) => {
+        const firstName = result.node?.firstName?.trim() ?? "";
+        const lastName = result.node?.lastName?.trim() ?? "";
+        const lastWords = lastName.split(/\s+/).filter(Boolean);
+        return {
+          fullName: [firstName, lastName].filter(Boolean).join(" ").trim(),
+          searchHints: [...new Set([lastName, ...lastWords].filter(Boolean))]
+        };
+      })
+      .filter((result) => result.fullName)
       .slice(0, 3);
-
-    for (const expandedName of expandedNames) {
-      const courses = await fetchUcfProfessorCourses(expandedName, term, limit);
-      if (courses.length > 0) return courses;
-    }
   } catch {
     // RMP is only used as a name-expansion fallback; direct UCF results remain authoritative.
+    return [];
   }
-
-  return [];
 }
