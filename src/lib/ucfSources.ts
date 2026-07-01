@@ -161,7 +161,7 @@ export async function searchUcfCatalog(query: string, limit = 10, options: Catal
   return allCourses.slice(0, limit);
 }
 
-export async function fetchUcfProfessorCourses(professorQuery: string, term: string, limit = 30): Promise<Course[]> {
+export async function fetchUcfProfessorCourses(professorQuery: string, term: string, limit = 30, searchNameHints?: string[]): Promise<Course[]> {
   const name = professorQuery.trim().replace(/^@/, "").replace(/\s+/g, " ");
   if (name.length < 2) return [];
 
@@ -171,9 +171,9 @@ export async function fetchUcfProfessorCourses(professorQuery: string, term: str
   if (!initialHtml.includes("CLASS_SRCH_WRK2_SSR_PB_CLASS_SRCH")) return [];
 
   const normalizedName = name.toLowerCase();
-  const courseMap = new Map<string, Course>();
-
-  for (const searchName of professorSearchNames(name)) {
+  const searchNames = (searchNameHints?.length ? searchNameHints : professorSearchNames(name)).slice(0, 4);
+  const responses = await Promise.all(
+    searchNames.map(async (searchName) => {
     const params = allFormFields(initialHtml);
     params.set("ICAction", "CLASS_SRCH_WRK2_SSR_PB_CLASS_SRCH");
     params.set("ICChanged", "1");
@@ -186,7 +186,7 @@ export async function fetchUcfProfessorCourses(professorQuery: string, term: str
     params.set("FX_CLSSRCH_DER_FLAG$chk", "Y");
     params.set("FX_CLSSRCH_DER_FLAG", "Y");
 
-    const response = await peopleSoftFetch(UCF_CLASS_SEARCH_URL, {
+    return peopleSoftFetch(UCF_CLASS_SEARCH_URL, {
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
@@ -197,7 +197,11 @@ export async function fetchUcfProfessorCourses(professorQuery: string, term: str
       },
       body: params
     });
+    })
+  );
 
+  const courseMap = new Map<string, Course>();
+  for (const response of responses) {
     for (const course of parsePeopleSoftCourseResults(response.html)) {
       const sections = course.sections.filter((section) => professorNameMatches(section.professorName, normalizedName));
       if (sections.length === 0) continue;
@@ -209,8 +213,6 @@ export async function fetchUcfProfessorCourses(professorQuery: string, term: str
         existing.sections = [...existing.sections, ...sections.filter((section) => !seenSections.has(section.id))];
       }
     }
-
-    if (courseMap.size >= limit) break;
   }
 
   return [...courseMap.values()].slice(0, limit);
@@ -229,7 +231,8 @@ function professorNameMatches(professorName: string, query: string) {
 function professorSearchNames(name: string) {
   const clean = formatInstructorName(name);
   const words = clean.split(/\s+/).filter(Boolean);
-  const candidates = [clean, words.at(-1) ?? clean, words[0] ?? clean, ...words];
+  const [first = clean, ...rest] = words;
+  const candidates = [clean, words.at(-1) ?? clean, ...rest, first];
   const firstLetter = (words.at(-1) ?? clean).slice(0, 1);
   if (firstLetter) candidates.push(firstLetter);
   return [...new Set(candidates.filter(Boolean))];
@@ -592,7 +595,7 @@ function parsePeopleSoftSectionRow($: cheerio.CheerioAPI, row: Parameters<cheeri
 
 async function fetchSeatDetailsForSections(html: string, cookie: string, sections: ParsedPeopleSoftSection[]) {
   const details = new Map<string, SeatDetails>();
-  const chunkSize = 4;
+  const chunkSize = 10;
 
   for (let index = 0; index < sections.length; index += chunkSize) {
     const chunk = sections.slice(index, index + chunkSize);
