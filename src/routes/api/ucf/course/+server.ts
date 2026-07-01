@@ -1,6 +1,9 @@
 import { json } from "@sveltejs/kit";
 import { likelyCourseCode, searchUcfCatalog } from "$lib/ucfSources";
+import { cached } from "$lib/server/cache";
 import type { RequestHandler } from "./$types";
+
+const thirtyMinutes = 30 * 60 * 1000;
 
 export const GET: RequestHandler = async ({ url }) => {
   const course = likelyCourseCode(url.searchParams.get("course") ?? "");
@@ -10,7 +13,7 @@ export const GET: RequestHandler = async ({ url }) => {
   }
 
   try {
-    const [detail] = await searchUcfCatalog(course, 1, { includeDetails: true });
+    const [detail] = await cached(`course:${course}`, thirtyMinutes, () => searchUcfCatalog(course, 1, { includeDetails: true }));
     return json({ course: detail ?? null, sourceStatus: detail ? "Live UCF catalog detail." : "Course not found." });
   } catch (error) {
     return json(
