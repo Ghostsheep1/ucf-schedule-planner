@@ -12,7 +12,7 @@ export const dayLabels: Record<DayOfWeek, string> = {
   Online: "Other"
 };
 
-export const blockColors = ["#f0b429", "#3f8cff", "#20a67a", "#d45d79", "#7c5cff", "#ef7d22", "#1c7c8c", "#8a6f2a"];
+export const blockColors = ["#eeeda9", "#efc993", "#eda6aa", "#aec4ec", "#aee6dc", "#aee6a8", "#d7a6e8", "#c8b6ff"];
 
 export function uid(prefix: string) {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
