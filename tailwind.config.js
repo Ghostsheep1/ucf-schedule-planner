@@ -27,6 +27,7 @@ export default {
       hoverDark: "#30374a",
       ucfBlack: "#050505",
       ucfGold: "#ffc904",
+      ucfOrange: "#ff7a3d",
       ucfDarkGold: "#c59100"
     },
     extend: {}
