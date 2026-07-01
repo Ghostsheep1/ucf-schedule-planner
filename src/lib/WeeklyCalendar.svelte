@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CalendarBlock, DayOfWeek } from "$lib/types";
-  import { dayLabels, days, formatTimeRange, minutesToDisplay, timeToMinutes } from "$lib/planner";
+  import { dayLabels, days, minutesToDisplay, timeToMinutes } from "$lib/planner";
 
   export let blocks: CalendarBlock[] = [];
   export let removeSelection: (sourceId: string) => void = () => {};
@@ -43,6 +43,20 @@
 
   function blockHeight(block: CalendarBlock) {
     return Math.max(44, (timeToMinutes(block.endTime) - timeToMinutes(block.startTime)) * minuteHeight - 4);
+  }
+
+  function compactTime(time: string) {
+    if (!time) return "";
+    const [hourText, minuteText] = time.split(":");
+    const hour24 = Number(hourText);
+    const suffix = hour24 >= 12 ? "pm" : "am";
+    const hour = hour24 % 12 || 12;
+    return `${hour}:${minuteText}${suffix}`;
+  }
+
+  function compactTimeRange(block: CalendarBlock) {
+    if (!block.startTime || !block.endTime) return "Async";
+    return `${compactTime(block.startTime)} - ${compactTime(block.endTime)}`;
   }
 
   function removeBlock(block: CalendarBlock) {
@@ -89,23 +103,27 @@
             class:opacity-45={block.preview}
             class:ring-2={block.conflict}
             class:ring-red-500={block.conflict}
-            class="absolute left-2 right-2 overflow-hidden rounded-md px-2 py-2 text-xs font-bold text-white shadow-sm"
-            style={`top:${day === "Online" ? 8 + index * 92 : blockTop(block)}px;height:${day === "Online" ? 84 : blockHeight(block)}px;background:${block.type === "custom" ? "#1c1c1c" : block.color}`}
+            class="absolute left-2 right-2 overflow-hidden rounded-xl text-center !text-black shadow-sm"
+            style={`top:${day === "Online" ? 8 + index * 128 : blockTop(block)}px;height:${day === "Online" ? 120 : blockHeight(block)}px;background:${block.type === "custom" ? "#d8d8d8" : block.color}`}
           >
+            <div class="flex min-h-8 items-center justify-center bg-black/10 px-8 py-1 text-xl font-black leading-tight">
+              {block.courseCode ?? block.title}
+            </div>
             {#if !block.preview}
               <button
-                class="absolute right-1 top-1 h-5 w-5 rounded bg-black/20 leading-5 text-white hover:bg-black/35"
+                class="absolute right-2 top-1 z-10 grid h-7 w-7 place-items-center rounded-full text-2xl font-black leading-none !text-black hover:bg-black/10"
                 aria-label={`Remove ${block.title}`}
                 on:click={() => removeBlock(block)}
               >
                 ×
               </button>
             {/if}
-            <div class="pr-5">{block.courseCode ?? block.title}</div>
-            {#if block.professor}<div class="font-normal">{block.professor}</div>{/if}
-            <div class="font-normal">{formatTimeRange(block.startTime, block.endTime)}</div>
-            {#if block.sectionNumber}<div class="font-normal">Sec {block.sectionNumber}</div>{/if}
-            {#if block.location}<div class="font-normal">{block.location}</div>{/if}
+            <div class="px-3 py-1 text-base leading-snug">
+              {#if block.professor}<div>{block.professor}</div>{/if}
+              <div>{compactTimeRange(block)}</div>
+              {#if block.sectionNumber}<div>Section {block.sectionNumber}</div>{/if}
+              {#if block.location}<div>{block.location}</div>{/if}
+            </div>
           </div>
         {/each}
       </div>
