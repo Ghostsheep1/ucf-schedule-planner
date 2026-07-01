@@ -25,12 +25,23 @@
   import { ucfAttributeTags } from "$lib/ucfSources";
   import { formatInstructorName } from "$lib/format";
 
+  type GeneratorPinMode = "any" | "section" | "professor";
+  type GeneratorCourseConfig = {
+    required: boolean;
+    pinMode: GeneratorPinMode;
+    sectionId: string;
+    professorName: string;
+  };
+
   const terms = ["Fall 2026", "Spring 2027", "Summer 2027"];
   const plannerKey = "knight-planner-state-v2-svelte";
   const emptyFilters: Filters = { genEdTags: [], minCredits: "", maxCredits: "", onlyOpen: false };
   const githubUrl = "https://github.com/Ghostsheep1/ucf-schedule-planner";
   const issueMailto = "mailto:hsribeiro1@gmail.com?subject=Knight%20Planner%20issue";
   const appVersion = "1.0.0";
+  const searchResponseCache = new Map<string, { courses: Course[]; sourceStatus: string }>();
+  const courseDetailCache = new Map<string, Course>();
+  const sectionResponseCache = new Map<string, Section[]>();
   const fallbackDepartments = [
     ["ACG", "Accounting"],
     ["AMH", "American History"],
@@ -105,6 +116,7 @@
   let eventNotes = "";
   let eventError = "";
   let generatorCourses: Course[] = [];
+  let generatorCourseConfigs: Record<string, GeneratorCourseConfig> = {};
   let generatorResults: SchedulePlan[] = [];
   let generatorNotice = "Add courses and set constraints, then generate schedules.";
   let generatorConstraints = {
@@ -186,15 +198,24 @@
       searchAbort = controller;
       searchTimer = setTimeout(async () => {
         try {
-          const response = await fetch(`/api/ucf/search?q=${encodeURIComponent(cleaned)}&term=${encodeURIComponent(term)}&sections=0&limit=80`, {
-            signal: controller.signal
-          });
-          const payload = (await response.json()) as { courses?: Course[]; sourceStatus?: string };
+          const cacheKey = `${term}:${cleaned}`;
+          const cachedPayload = searchResponseCache.get(cacheKey);
+          const payload =
+            cachedPayload ??
+            (await (async () => {
+              const response = await fetch(`/api/ucf/search?q=${encodeURIComponent(cleaned)}&term=${encodeURIComponent(term)}&sections=0&limit=80`, {
+                signal: controller.signal
+              });
+              const fresh = (await response.json()) as { courses?: Course[]; sourceStatus?: string };
+              const normalized = { courses: fresh.courses ?? [], sourceStatus: fresh.sourceStatus ?? "UCF source returned results." };
+              searchResponseCache.set(cacheKey, normalized);
+              return normalized;
+            })());
           if (run !== searchRun) return;
-          courses = payload.courses ?? [];
+          courses = payload.courses;
           hiddenCourses = {};
           sectionLoaded = {};
-          sourceStatus = payload.sourceStatus ?? "UCF source returned results.";
+          sourceStatus = payload.sourceStatus;
           hydrateSections(courses, term, run);
         } catch (error) {
           if (!controller.signal.aborted) {
@@ -216,7 +237,11 @@
         ...sectionLoaded,
         ...Object.fromEntries(sourceCourses.map((course) => [course.id, true]))
       };
-      sourceCourses.forEach((course) => void fetchCourseDetail(course, run));
+      sourceCourses.forEach((course) => {
+        void fetchCourseDetail(course, run);
+        detailLoading = { ...detailLoading, [course.id]: true };
+        void fetchSectionsForCourse(course, term, run, true);
+      });
       return;
     }
 
@@ -228,8 +253,10 @@
       : sourceCourses.slice(0, hydrationLimit);
     prioritized.forEach((course) => {
       sectionLoading = { ...sectionLoading, [course.id]: true };
+      detailLoading = { ...detailLoading, [course.id]: true };
       void fetchCourseDetail(course, run);
       void fetchSectionsForCourse(course, term, run, false);
+      void fetchSectionsForCourse(course, term, run, true);
     });
   }
 
@@ -247,17 +274,25 @@
 
   async function fetchCourseDetail(course: Course, run: number) {
     try {
-      const response = await fetch(`/api/ucf/course?course=${encodeURIComponent(course.code)}`);
-      const payload = (await response.json()) as { course?: Course | null };
-      if (run !== searchRun || !payload.course) return;
+      const cachedCourse = courseDetailCache.get(course.code);
+      const detailedCourse =
+        cachedCourse ??
+        (await (async () => {
+          const response = await fetch(`/api/ucf/course?course=${encodeURIComponent(course.code)}`);
+          const payload = (await response.json()) as { course?: Course | null };
+          if (!payload.course) return null;
+          courseDetailCache.set(course.code, payload.course);
+          return payload.course;
+        })());
+      if (run !== searchRun || !detailedCourse) return;
       courses = courses.map((item) =>
-        item.id === course.id && sameCourseCode(item.code, payload.course!.code)
-          ? { ...payload.course!, id: item.id, sections: item.sections.length ? item.sections : payload.course!.sections }
+        item.id === course.id && sameCourseCode(item.code, detailedCourse.code)
+          ? { ...detailedCourse, id: item.id, sections: item.sections.length ? item.sections : detailedCourse.sections }
           : item
       );
       generatorCourses = generatorCourses.map((item) =>
-        item.id === course.id && sameCourseCode(item.code, payload.course!.code)
-          ? { ...payload.course!, id: item.id, sections: item.sections.length ? item.sections : payload.course!.sections }
+        item.id === course.id && sameCourseCode(item.code, detailedCourse.code)
+          ? { ...detailedCourse, id: item.id, sections: item.sections.length ? item.sections : detailedCourse.sections }
           : item
       );
     } catch {
@@ -305,25 +340,39 @@
 
   async function fetchSectionsForCourse(course: Course, term: string, run: number, details: boolean) {
     try {
-      const response = await fetch(
-        `/api/ucf/sections?course=${encodeURIComponent(course.code)}&term=${encodeURIComponent(term)}&details=${details ? "1" : "0"}`
-      );
-      const payload = (await response.json()) as { sections?: Section[]; sourceStatus?: string };
+      const cacheKey = `${course.code}:${term}:${details ? "details" : "rows"}`;
+      const sections =
+        sectionResponseCache.get(cacheKey) ??
+        (await (async () => {
+          const response = await fetch(
+            `/api/ucf/sections?course=${encodeURIComponent(course.code)}&term=${encodeURIComponent(term)}&details=${details ? "1" : "0"}`
+          );
+          const payload = (await response.json()) as { sections?: Section[] };
+          const freshSections = payload.sections ?? [];
+          sectionResponseCache.set(cacheKey, freshSections);
+          return freshSections;
+        })());
       if (run !== searchRun) return;
       const professorToken = query.match(/@("?)([^"]+)\1/)?.[2]?.trim().toLowerCase() ?? "";
-      const sections = (payload.sections ?? []).filter(
+      const filteredSections = sections.filter(
         (section) => !professorToken || professorNameMatches(section.professorName, professorToken)
       );
-      courses = courses.map((item) => (item.id === course.id ? { ...item, sections } : item));
-      generatorCourses = generatorCourses.map((item) => (item.id === course.id ? { ...item, sections } : item));
+      courses = courses.map((item) =>
+        item.id === course.id
+          ? { ...item, sections: !details && item.sections.some((section) => section.seatDetailsStatus === "live") ? item.sections : filteredSections }
+          : item
+      );
+      generatorCourses = generatorCourses.map((item) =>
+        item.id === course.id
+          ? { ...item, sections: !details && item.sections.some((section) => section.seatDetailsStatus === "live") ? item.sections : filteredSections }
+          : item
+      );
       sectionLoaded = { ...sectionLoaded, [course.id]: true };
       sourceStatus = details ? `Updated live seats for ${course.code}.` : `Loaded live sections for ${course.code}. Updating seats...`;
       if (details) {
         detailLoading = { ...detailLoading, [course.id]: false };
       } else {
         sectionLoading = { ...sectionLoading, [course.id]: false };
-        detailLoading = { ...detailLoading, [course.id]: true };
-        void fetchSectionsForCourse(course, term, run, true);
       }
     } catch (error) {
       if (run !== searchRun) return;
@@ -661,12 +710,71 @@
   function addGeneratorCourse(course: Course) {
     if (generatorCourses.some((item) => item.id === course.id)) return;
     generatorCourses = [...generatorCourses, course];
+    generatorCourseConfigs = {
+      ...generatorCourseConfigs,
+      [course.id]: defaultGeneratorCourseConfig(course)
+    };
     generatorNotice = `${course.code} added to generator.`;
   }
 
   function removeGeneratorCourse(courseId: string) {
     generatorCourses = generatorCourses.filter((course) => course.id !== courseId);
+    const remaining = { ...generatorCourseConfigs };
+    delete remaining[courseId];
+    generatorCourseConfigs = remaining;
     generatorResults = [];
+  }
+
+  function isGeneratorCourse(course: Course) {
+    return generatorCourses.some((item) => item.id === course.id);
+  }
+
+  function clearGeneratorConstraints() {
+    generatorConstraints = { noBefore: "", noAfter: "", daysOff: [], onlyOpen: true, minGap: "0", minCredits: "" };
+    generatorResults = [];
+  }
+
+  function defaultGeneratorCourseConfig(course: Course): GeneratorCourseConfig {
+    return {
+      required: true,
+      pinMode: "any",
+      sectionId: course.sections[0]?.id ?? "",
+      professorName: uniqueProfessors(course)[0] ?? ""
+    };
+  }
+
+  function generatorConfig(course: Course) {
+    return generatorCourseConfigs[course.id] ?? defaultGeneratorCourseConfig(course);
+  }
+
+  function updateGeneratorCourseConfig(course: Course, updates: Partial<GeneratorCourseConfig>) {
+    generatorCourseConfigs = {
+      ...generatorCourseConfigs,
+      [course.id]: { ...generatorConfig(course), ...updates }
+    };
+    generatorResults = [];
+  }
+
+  function uniqueProfessors(course: Course) {
+    return [
+      ...new Set(
+        course.sections
+          .map((section) => formatInstructorName(section.professorName))
+          .filter((name) => name && name !== "TBA" && name !== "To Be Announced")
+      )
+    ].sort((a, b) => a.localeCompare(b));
+  }
+
+  function courseSectionsForGenerator(course: Course) {
+    const config = generatorConfig(course);
+    let sections = course.sections.filter(sectionPassesGenerator);
+    if (config.pinMode === "section" && config.sectionId) {
+      sections = sections.filter((section) => section.id === config.sectionId);
+    }
+    if (config.pinMode === "professor" && config.professorName) {
+      sections = sections.filter((section) => formatInstructorName(section.professorName) === config.professorName);
+    }
+    return sections;
   }
 
   function sectionPassesGenerator(section: Section) {
@@ -709,10 +817,11 @@
     const minCredits = Number(generatorConstraints.minCredits || 0);
     const options = readyCourses.map((course) => ({
       course,
-      sections: course.sections.filter(sectionPassesGenerator)
+      config: generatorConfig(course),
+      sections: courseSectionsForGenerator(course)
     }));
-    if (options.some((option) => option.sections.length === 0)) {
-      generatorNotice = "At least one selected course has no sections matching these constraints.";
+    if (options.some((option) => option.config.required && option.sections.length === 0)) {
+      generatorNotice = "At least one required course has no sections matching these constraints.";
       return;
     }
     const results: SchedulePlan[] = [];
@@ -727,6 +836,9 @@
         return;
       }
       const option = options[index];
+      if (!option.config.required) {
+        walk(index + 1, selections);
+      }
       for (const section of option.sections) {
         const selection = {
           id: uid("generated-selection"),
@@ -1219,7 +1331,7 @@
     </section>
   </div>
   {:else}
-    <section class="fixed bottom-0 top-12 grid w-full grid-cols-1 overflow-auto bg-bgLight px-4 py-5 dark:bg-bgDark lg:grid-cols-[24rem_minmax(0,1fr)]">
+    <section class="fixed bottom-0 top-12 grid w-full grid-cols-1 overflow-auto bg-bgLight px-4 py-5 dark:bg-bgDark lg:grid-cols-[25rem_minmax(0,1fr)]">
       <aside class="border-divBorderLight pr-4 dark:border-divBorderDark lg:border-r">
         <div class="mb-5 flex items-center justify-between">
           <h1 class="text-2xl font-black">Courses</h1>
@@ -1235,19 +1347,21 @@
           <button on:click={() => (filters = { ...emptyFilters })}>Clear filters</button>
         </div>
 
-        <div class="mt-4 space-y-2">
-          {#each visibleCourses.slice(0, 5) as course}
-            <div class="rounded-md border border-outlineLight bg-bgSecondaryLight p-2 dark:border-outlineDark dark:bg-bgSecondaryDark">
-              <div class="flex items-center justify-between">
-                <div>
-                  <b>{course.code}</b>
-                  <div class="text-sm text-secCodesLight">{course.title}</div>
-                </div>
-                <button class="rounded bg-ucfBlack px-2 py-1 text-xs font-black text-ucfGold" on:click={() => addGeneratorCourse(course)}>Add</button>
+        <div class="mt-4 max-h-80 overflow-y-auto border-b border-divBorderLight dark:border-divBorderDark">
+          {#each visibleCourses.slice(0, 24) as course}
+            {@const selected = isGeneratorCourse(course)}
+            <div class="grid grid-cols-[1fr_auto_auto] items-center gap-2 border-t border-divBorderLight px-1 py-2 text-sm dark:border-divBorderDark">
+              <div class="min-w-0">
+                <b>{course.code}</b>
+                <div class="truncate text-xs font-semibold text-secCodesLight">{course.title}</div>
               </div>
-              <div class="mt-1 text-xs text-secCodesLight">
-                {sectionLoading[course.id] ? "Loading sections..." : `${course.sections.length} sections`}
-              </div>
+              <span class="text-xs font-bold text-secCodesLight">{course.credits || 0} cr</span>
+              <button
+                class={`rounded-md border px-3 py-1 text-xs font-black ${selected ? "border-ucfDarkGold text-ucfDarkGold" : "border-ucfDarkGold text-ucfDarkGold"}`}
+                on:click={() => selected ? removeGeneratorCourse(course.id) : addGeneratorCourse(course)}
+              >
+                {selected ? "Remove" : "Add"}
+              </button>
             </div>
           {/each}
           {#if query.trim().length < 2}
@@ -1256,13 +1370,49 @@
         </div>
 
         {#if generatorCourses.length > 0}
-          <div class="mt-5 border-t border-divBorderLight pt-4 dark:border-divBorderDark">
-            <h2 class="mb-2 text-lg font-black">Selected Courses</h2>
+          <div class="mt-4 space-y-2">
             {#each generatorCourses as course}
-              <div class="mb-1 flex items-center justify-between rounded-md bg-bgSecondaryLight px-2 py-1 text-sm dark:bg-bgSecondaryDark">
-                <span><b>{course.code}</b> {course.sections.length} sections</span>
-                <button class="font-black text-red-700" on:click={() => removeGeneratorCourse(course.id)}>×</button>
-              </div>
+              {@const config = generatorConfig(course)}
+              {@const professors = uniqueProfessors(course)}
+              <article class="rounded-md border border-divBorderLight bg-bgSecondaryLight p-3 text-sm dark:border-divBorderDark dark:bg-bgSecondaryDark">
+                <div class="mb-2 flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <b class="text-lg">{course.code}</b>
+                    <div class="truncate text-sm font-semibold text-secCodesLight">{course.title}</div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <div class="grid grid-cols-2 overflow-hidden rounded-md border border-outlineLight text-sm dark:border-outlineDark">
+                      <button class={`px-2 py-1 font-black ${config.required ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { required: true })}>Required</button>
+                      <button class={`px-2 py-1 font-black ${!config.required ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { required: false })}>Optional</button>
+                    </div>
+                    <button class="text-xl font-black text-secCodesLight" aria-label={`Remove ${course.code}`} on:click={() => removeGeneratorCourse(course.id)}>×</button>
+                  </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-bold text-secCodesLight">Pin to:</span>
+                  <div class="grid grid-cols-3 overflow-hidden rounded-md border border-outlineLight dark:border-outlineDark">
+                    <button class={`px-2 py-1 font-bold ${config.pinMode === "any" ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { pinMode: "any" })}>Any</button>
+                    <button class={`px-2 py-1 font-bold ${config.pinMode === "section" ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { pinMode: "section", sectionId: config.sectionId || course.sections[0]?.id || "" })}>Section</button>
+                    <button class={`px-2 py-1 font-bold ${config.pinMode === "professor" ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { pinMode: "professor", professorName: config.professorName || professors[0] || "" })}>Professor</button>
+                  </div>
+                  {#if config.pinMode === "section"}
+                    <select class="min-w-28 rounded-md border border-outlineLight bg-transparent px-2 py-1 dark:border-outlineDark" value={config.sectionId} on:change={(event) => updateGeneratorCourseConfig(course, { sectionId: event.currentTarget.value })}>
+                      {#each course.sections as section}
+                        <option value={section.id}>{section.sectionNumber}</option>
+                      {/each}
+                    </select>
+                  {:else if config.pinMode === "professor"}
+                    <select class="min-w-40 rounded-md border border-outlineLight bg-transparent px-2 py-1 dark:border-outlineDark" value={config.professorName} on:change={(event) => updateGeneratorCourseConfig(course, { professorName: event.currentTarget.value })}>
+                      {#each professors as professor}
+                        <option value={professor}>{professor}</option>
+                      {/each}
+                    </select>
+                  {/if}
+                </div>
+                <div class="mt-2 text-xs font-semibold text-secCodesLight">
+                  {courseSectionsForGenerator(course).length} matching section{courseSectionsForGenerator(course).length === 1 ? "" : "s"}
+                </div>
+              </article>
             {/each}
           </div>
         {/if}
@@ -1270,7 +1420,7 @@
         <div class="mt-5 border-t border-divBorderLight pt-4 dark:border-divBorderDark">
           <div class="mb-2 flex items-center justify-between">
             <h2 class="text-lg font-black">Constraints</h2>
-            <button class="text-sm font-bold text-secCodesLight" on:click={() => (generatorConstraints = { noBefore: "", noAfter: "", daysOff: [], onlyOpen: true, minGap: "0", minCredits: "" })}>Clear</button>
+            <button class="text-sm font-bold text-secCodesLight" on:click={clearGeneratorConstraints}>Clear</button>
           </div>
           <div class="grid gap-3 text-sm">
             <label class="grid grid-cols-[7rem_1fr] items-center gap-2">No class before
