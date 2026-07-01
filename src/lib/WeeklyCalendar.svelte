@@ -5,6 +5,7 @@
   export let blocks: CalendarBlock[] = [];
   export let removeSelection: (sourceId: string) => void = () => {};
   export let removeCustomEvent: (sourceId: string) => void = () => {};
+  export let selectBlock: (sourceId: string) => void = () => {};
 
   const minuteHeight = 1.85;
 
@@ -63,6 +64,12 @@
     if (block.type === "course") removeSelection(block.sourceId);
     else removeCustomEvent(block.sourceId);
   }
+
+  function handleBlockKeydown(event: KeyboardEvent, block: CalendarBlock) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    selectBlock(block.sourceId);
+  }
 </script>
 
 <div
@@ -100,11 +107,15 @@
 
         {#each normalizedBlocks.filter((block) => block.dayOfWeek === day) as block, index (block.id)}
           <div
+            role="button"
+            tabindex={block.preview ? -1 : 0}
             class:opacity-45={block.preview}
             class:ring-2={block.conflict}
             class:ring-red-500={block.conflict}
-            class="absolute left-2 right-2 overflow-hidden rounded-xl text-center !text-black shadow-sm"
+            class="absolute left-2 right-2 overflow-hidden rounded-xl text-center !text-black shadow-sm focus:outline-none focus:ring-2 focus:ring-ucfGold"
             style={`top:${day === "Online" ? 8 + index * 128 : blockTop(block)}px;height:${day === "Online" ? 120 : blockHeight(block)}px;background:${block.type === "custom" ? "#d8d8d8" : block.color}`}
+            on:click={() => !block.preview && selectBlock(block.sourceId)}
+            on:keydown={(event) => !block.preview && handleBlockKeydown(event, block)}
           >
             <div class="flex min-h-8 items-center justify-center bg-black/10 px-8 py-1 text-xl font-black leading-tight">
               {block.courseCode ?? block.title}
@@ -113,7 +124,7 @@
               <button
                 class="absolute right-2 top-1 z-10 grid h-7 w-7 place-items-center rounded-full text-2xl font-black leading-none !text-black hover:bg-black/10"
                 aria-label={`Remove ${block.title}`}
-                on:click={() => removeBlock(block)}
+                on:click|stopPropagation={() => removeBlock(block)}
               >
                 ×
               </button>
