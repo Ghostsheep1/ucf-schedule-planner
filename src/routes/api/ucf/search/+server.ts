@@ -1,6 +1,13 @@
 import { json } from "@sveltejs/kit";
-import { fetchUcfClassSections, fetchUcfProfessorCourses, searchUcfCatalog } from "$lib/ucfSources";
+import { RMP_UCF_SCHOOL_ID, fetchUcfClassSections, fetchUcfProfessorCourses, searchUcfCatalog } from "$lib/ucfSources";
 import type { RequestHandler } from "./$types";
+
+type RmpTeacher = {
+  node?: {
+    firstName?: string;
+    lastName?: string;
+  };
+};
 
 export const GET: RequestHandler = async ({ url }) => {
   const query = url.searchParams.get("q")?.trim() ?? "";
@@ -18,7 +25,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
   try {
     if (professorToken && catalogQuery.length < 2) {
-      const courses = await fetchUcfProfessorCourses(professorToken, term, requestedLimit || 40);
+      const courses = await fetchUcfProfessorCoursesWithFallbacks(professorToken, term, requestedLimit || 40);
       return json({
         courses,
         sourceStatus: courses.length ? `Live myUCF sections matching @${professorToken}.` : `No live myUCF sections found for @${professorToken}.`
@@ -51,3 +58,26 @@ export const GET: RequestHandler = async ({ url }) => {
     );
   }
 };
+
+async function fetchUcfProfessorCoursesWithFallbacks(professorToken: string, term: string, limit: number) {
+  const direct = await fetchUcfProfessorCourses(professorToken, term, limit);
+  if (direct.length > 0) return direct;
+
+  try {
+    const rmp = await import("ratemyprofessor-api");
+    const results = (await rmp.searchProfessorsAtSchoolId(professorToken, RMP_UCF_SCHOOL_ID)) as RmpTeacher[];
+    const expandedNames = results
+      .map((result) => [result.node?.firstName, result.node?.lastName].filter(Boolean).join(" ").trim())
+      .filter(Boolean)
+      .slice(0, 3);
+
+    for (const expandedName of expandedNames) {
+      const courses = await fetchUcfProfessorCourses(expandedName, term, limit);
+      if (courses.length > 0) return courses;
+    }
+  } catch {
+    // RMP is only used as a name-expansion fallback; direct UCF results remain authoritative.
+  }
+
+  return [];
+}
