@@ -208,6 +208,15 @@
   async function hydrateSections(sourceCourses: Course[], term: string, run: number) {
     const catalogPart = query.replace(/@("?)[^"]+\1/g, "").trim();
     const professorToken = query.match(/@("?)([^"]+)\1/)?.[2]?.trim() ?? "";
+    if (professorToken && !catalogPart) {
+      sectionLoaded = {
+        ...sectionLoaded,
+        ...Object.fromEntries(sourceCourses.map((course) => [course.id, true]))
+      };
+      sourceCourses.forEach((course) => void fetchCourseDetail(course, run));
+      return;
+    }
+
     const compactQuery = catalogPart.toUpperCase().replace(/[^A-Z0-9]/g, "");
     const baseQuery = compactQuery.replace(/[A-Z]+$/, "");
     const hydrationLimit = professorToken ? 24 : 12;
@@ -239,14 +248,31 @@
       const payload = (await response.json()) as { course?: Course | null };
       if (run !== searchRun || !payload.course) return;
       courses = courses.map((item) =>
-        item.id === course.id ? { ...payload.course!, id: item.id, sections: item.sections.length ? item.sections : payload.course!.sections } : item
+        item.id === course.id && sameCourseCode(item.code, payload.course!.code)
+          ? { ...payload.course!, id: item.id, sections: item.sections.length ? item.sections : payload.course!.sections }
+          : item
       );
       generatorCourses = generatorCourses.map((item) =>
-        item.id === course.id ? { ...payload.course!, id: item.id, sections: item.sections.length ? item.sections : payload.course!.sections } : item
+        item.id === course.id && sameCourseCode(item.code, payload.course!.code)
+          ? { ...payload.course!, id: item.id, sections: item.sections.length ? item.sections : payload.course!.sections }
+          : item
       );
     } catch {
       // Catalog rows are still usable while detailed credits/prereqs hydrate.
     }
+  }
+
+  function sameCourseCode(a: string, b: string) {
+    return a.toUpperCase().replace(/[^A-Z0-9]/g, "") === b.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  }
+
+  function professorNameMatches(professorName: string, professorQuery: string) {
+    const clean = professorQuery.trim().toLowerCase();
+    const fullName = professorName.toLowerCase().replace(/\s+/g, " ");
+    if (!clean) return true;
+    if (clean.includes(" ")) return fullName.includes(clean);
+    const words = fullName.split(/[^a-z]+/).filter(Boolean);
+    return words.some((word) => (clean.length >= 4 ? word === clean : word.startsWith(clean)));
   }
 
   async function fetchSectionsForCourse(course: Course, term: string, run: number, details: boolean) {
@@ -256,7 +282,10 @@
       );
       const payload = (await response.json()) as { sections?: Section[]; sourceStatus?: string };
       if (run !== searchRun) return;
-      const sections = payload.sections ?? [];
+      const professorToken = query.match(/@("?)([^"]+)\1/)?.[2]?.trim().toLowerCase() ?? "";
+      const sections = (payload.sections ?? []).filter(
+        (section) => !professorToken || professorNameMatches(section.professorName, professorToken)
+      );
       courses = courses.map((item) => (item.id === course.id ? { ...item, sections } : item));
       generatorCourses = generatorCourses.map((item) => (item.id === course.id ? { ...item, sections } : item));
       sectionLoaded = { ...sectionLoaded, [course.id]: true };
@@ -314,7 +343,7 @@
         !professorToken ||
         sectionLoading[course.id] ||
         detailLoading[course.id] ||
-        course.sections.some((section) => section.professorName.toLowerCase().includes(professorToken));
+        course.sections.some((section) => professorNameMatches(section.professorName, professorToken));
       const matchesTags = genEdFilters.length === 0 || genEdFilters.every((tag) => course.genEdTags.includes(tag));
       const min = currentFilters.minCredits ? Number(currentFilters.minCredits) : 0;
       const max = currentFilters.maxCredits ? Number(currentFilters.maxCredits) : Infinity;
@@ -328,7 +357,25 @@
     const raw = text.trim();
     const clean = raw.toUpperCase().replace(/[^A-Z]/g, "");
     if (!clean || /[0-9@]/.test(raw) || raw.endsWith(" ") || clean.length > 4) return [];
-    return departments.filter(([code, name]) => code.startsWith(clean) || name.toUpperCase().includes(clean)).slice(0, 40);
+    const singular = clean.replace(/S$/, "");
+    return departments
+      .map(([code, name]) => {
+        const upperName = name.toUpperCase();
+        const words = upperName.split(/[^A-Z]+/).filter(Boolean);
+        const score =
+          code === clean ? 0 :
+          code === singular ? 1 :
+          code.startsWith(clean) ? 2 :
+          words.some((word) => word === clean) ? 3 :
+          words.some((word) => word.startsWith(clean)) ? 4 :
+          upperName.startsWith(clean) ? 5 :
+          Infinity;
+        return { code, name, score };
+      })
+      .filter((item) => Number.isFinite(item.score))
+      .sort((a, b) => a.score - b.score || a.code.localeCompare(b.code))
+      .slice(0, 40)
+      .map(({ code, name }) => [code, name]);
   }
 
   function selectDepartment(code: string) {
