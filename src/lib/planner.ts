@@ -1,3 +1,4 @@
+import { formatInstructorName } from "$lib/format";
 import type { CalendarBlock, Course, CustomEvent, DayOfWeek, Meeting, SchedulePlan, Section, SelectedSection } from "$lib/types";
 
 export const days: Exclude<DayOfWeek, "Online">[] = ["M", "Tu", "W", "Th", "F", "Sa", "Su"];
@@ -78,7 +79,7 @@ export function sectionToBlocks(course: Course, section: Section, selection: Sel
     courseCode: course.code,
     sectionNumber: section.sectionNumber,
     title: course.title,
-    professor: section.professorName,
+    professor: formatInstructorName(section.professorName),
     dayOfWeek: meeting.dayOfWeek,
     startTime: meeting.startTime,
     endTime: meeting.endTime,
