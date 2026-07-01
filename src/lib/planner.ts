@@ -1,12 +1,14 @@
 import type { CalendarBlock, Course, CustomEvent, DayOfWeek, Meeting, SchedulePlan, Section, SelectedSection } from "$lib/types";
 
-export const days: Exclude<DayOfWeek, "Online">[] = ["M", "Tu", "W", "Th", "F"];
+export const days: Exclude<DayOfWeek, "Online">[] = ["M", "Tu", "W", "Th", "F", "Sa", "Su"];
 export const dayLabels: Record<DayOfWeek, string> = {
   M: "Mon",
   Tu: "Tue",
   W: "Wed",
   Th: "Thu",
   F: "Fri",
+  Sa: "Sat",
+  Su: "Sun",
   Online: "Other"
 };
 

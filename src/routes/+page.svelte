@@ -31,7 +31,7 @@
   const githubUrl = "https://github.com/Ghostsheep1/ucf-schedule-planner";
   const issueMailto = "mailto:hsribeiro1@gmail.com?subject=Knight%20Planner%20issue";
   const appVersion = "1.0.0";
-  const departments = [
+  const fallbackDepartments = [
     ["ACG", "Accounting"],
     ["AMH", "American History"],
     ["ANT", "Anthropology"],
@@ -56,7 +56,7 @@
     ["PHIL", "Philosophy"],
     ["PHPE", "Philosophy, Politics, and Economics"],
     ["PHSC", "Public Health Science"],
-    ["PHYS", "Physics"],
+    ["PHY", "Physics"],
     ["PLCY", "Public Policy"],
     ["PLSC", "Plant Sciences"],
     ["PORT", "Portuguese"],
@@ -64,6 +64,7 @@
     ["SLS", "Student Life Skills"],
     ["STA", "Statistics"]
   ];
+  let departments = fallbackDepartments;
 
   let planner: PlannerState = defaultState();
   let hydrated = false;
@@ -74,14 +75,13 @@
   let courses: Course[] = [];
   let sourceStatus = "Search UCF catalog and myUCF class search.";
   let loadingCourses = false;
-  let activeView: "planner" | "generator" | "requirements" = "planner";
+  let activeView: "planner" | "generator" = "planner";
   let menuOpen = false;
   let aboutMenuOpen = false;
   let infoPage: "terms" | "privacy" | "changelog" | null = null;
   let darkMode = false;
   let scheduleDropdownOpen = false;
   let modalOpen = false;
-  let aboutOpen = false;
   let notice = "";
   let expanded: Record<string, boolean> = {};
   let hiddenCourses: Record<string, boolean> = {};
@@ -152,6 +152,7 @@
     darkMode = localStorage.getItem("knight-planner-theme") === "dark";
     document.documentElement.classList.toggle("dark", darkMode);
     hydrated = true;
+    void loadDepartments();
   });
 
   $: if (hydrated) {
@@ -165,8 +166,14 @@
     if (searchTimer) clearTimeout(searchTimer);
     if (searchAbort) searchAbort.abort();
     const run = (searchRun += 1);
+    const professorOnly = cleaned.trim().startsWith("@");
 
-    if (cleaned.length < 2) {
+    if (professorOnly) {
+      sourceStatus = courses.length
+        ? "Filtering loaded sections by professor. Add a UCF department or course before @professor to load more."
+        : "Add a UCF department or course before @professor, for example PHY @stolbov.";
+      loadingCourses = false;
+    } else if (cleaned.length < 2) {
       courses = [];
       hiddenCourses = {};
       sectionLoading = {};
@@ -201,16 +208,31 @@
   }
 
   async function hydrateSections(sourceCourses: Course[], term: string, run: number) {
-    const compactQuery = query.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const catalogPart = query.replace(/@("?)[^"]+\1/g, "").trim();
+    const professorToken = query.match(/@("?)([^"]+)\1/)?.[2]?.trim() ?? "";
+    const compactQuery = catalogPart.toUpperCase().replace(/[^A-Z0-9]/g, "");
     const baseQuery = compactQuery.replace(/[A-Z]+$/, "");
+    const hydrationLimit = professorToken ? 12 : 4;
     const prioritized = compactQuery.match(/^[A-Z]{2,4}[0-9]{4}[A-Z]{0,2}$/)
-      ? sourceCourses.filter((course) => course.code.toUpperCase().replace(/[^A-Z0-9]/g, "").startsWith(baseQuery)).slice(0, 4)
-      : sourceCourses.slice(0, 4);
+      ? sourceCourses.filter((course) => course.code.toUpperCase().replace(/[^A-Z0-9]/g, "").startsWith(baseQuery)).slice(0, hydrationLimit)
+      : sourceCourses.slice(0, hydrationLimit);
     prioritized.forEach((course) => {
       sectionLoading = { ...sectionLoading, [course.id]: true };
       void fetchCourseDetail(course, run);
       void fetchSectionsForCourse(course, term, run, false);
     });
+  }
+
+  async function loadDepartments() {
+    try {
+      const response = await fetch("/api/ucf/departments");
+      const payload = (await response.json()) as { departments?: { code: string; name: string }[] };
+      if (payload.departments?.length) {
+        departments = payload.departments.map((department) => [department.code, department.name]);
+      }
+    } catch {
+      departments = fallbackDepartments;
+    }
   }
 
   async function fetchCourseDetail(course: Course, run: number) {
@@ -289,7 +311,10 @@
         course.title.toLowerCase().includes(textQuery) ||
         course.genEdTags.some((tag) => tag.toLowerCase().includes(textQuery));
       const matchesProfessor =
-        !professorToken || course.sections.some((section) => section.professorName.toLowerCase().includes(professorToken));
+        !professorToken ||
+        sectionLoading[course.id] ||
+        detailLoading[course.id] ||
+        course.sections.some((section) => section.professorName.toLowerCase().includes(professorToken));
       const matchesTags = genEdFilters.length === 0 || genEdFilters.every((tag) => course.genEdTags.includes(tag));
       const min = currentFilters.minCredits ? Number(currentFilters.minCredits) : 0;
       const max = currentFilters.maxCredits ? Number(currentFilters.maxCredits) : Infinity;
@@ -300,7 +325,7 @@
   }
 
   function departmentMatches(text: string) {
-    const clean = text.trim().toUpperCase();
+    const clean = text.trim().toUpperCase().replace(/[^A-Z]/g, "");
     if (!clean || /[0-9@]/.test(clean) || clean.length > 4) return [];
     return departments.filter(([code, name]) => code.startsWith(clean) || name.toUpperCase().includes(clean)).slice(0, 10);
   }
@@ -346,18 +371,82 @@
   }
 
   function exportSchedule() {
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      term: planner.term,
-      schedule: activeSchedule
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const ics = buildIcs(activeSchedule, planner.term);
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${activeSchedule.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${planner.term.replace(/\s+/g, "-").toLowerCase()}.json`;
+    link.download = "Knight_Planner_Schedule.ics";
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  function buildIcs(schedule: SchedulePlan, term: string) {
+    const { start, until } = termDates(term);
+    const dayToIcs: Record<Exclude<DayOfWeek, "Online">, string> = { M: "MO", Tu: "TU", W: "WE", Th: "TH", F: "FR", Sa: "SA", Su: "SU" };
+    const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Knight Planner//EN"];
+    getSelectionPairs(schedule).forEach(({ course, section }) => {
+      const grouped = new Map<string, typeof section.meetings>();
+      section.meetings.filter((meeting) => meeting.dayOfWeek !== "Online" && meeting.startTime && meeting.endTime).forEach((meeting) => {
+        const key = `${meeting.startTime}-${meeting.endTime}-${[meeting.building, meeting.room].filter(Boolean).join(" ")}`;
+        grouped.set(key, [...(grouped.get(key) ?? []), meeting]);
+      });
+      grouped.forEach((meetings) => {
+        const first = meetings[0];
+        const location = [first.building, first.room].filter(Boolean).join(" ");
+        const firstDate = firstDateForDay(start, first.dayOfWeek as Exclude<DayOfWeek, "Online">);
+        lines.push(
+          "BEGIN:VEVENT",
+          `SUMMARY:${escapeIcs(`${course.code} (${section.sectionNumber})${location ? ` - ${location}` : ""}`)}`,
+          `DTSTART:${formatIcsDateTime(firstDate, first.startTime)}`,
+          `DTEND:${formatIcsDateTime(firstDate, first.endTime)}`,
+          `RRULE:FREQ=WEEKLY;BYDAY=${meetings.map((meeting) => dayToIcs[meeting.dayOfWeek as Exclude<DayOfWeek, "Online">]).join(",")};UNTIL=${until}`,
+          `LOCATION:${escapeIcs(location)}`,
+          `DESCRIPTION:${escapeIcs(`Course: ${course.title}\\nInstructors: ${section.professorName}`)}`,
+          `UID:${escapeIcs(`${course.code}-${section.sectionNumber}-${first.startTime.replace(":", "")}@knight-planner`)}`,
+          "END:VEVENT"
+        );
+      });
+    });
+    schedule.customEvents.forEach((event) => {
+      const firstDate = firstDateForDay(start, event.days[0] ?? "M");
+      lines.push(
+        "BEGIN:VEVENT",
+        `SUMMARY:${escapeIcs(event.name)}`,
+        `DTSTART:${formatIcsDateTime(firstDate, event.startTime)}`,
+        `DTEND:${formatIcsDateTime(firstDate, event.endTime)}`,
+        `RRULE:FREQ=WEEKLY;BYDAY=${event.days.map((day) => dayToIcs[day]).join(",")};UNTIL=${until}`,
+        `LOCATION:${escapeIcs(event.location ?? "")}`,
+        `DESCRIPTION:${escapeIcs(event.notes ?? "Custom event")}`,
+        `UID:${escapeIcs(`${event.id}@knight-planner`)}`,
+        "END:VEVENT"
+      );
+    });
+    lines.push("END:VCALENDAR");
+    return `${lines.join("\r\n")}\r\n`;
+  }
+
+  function termDates(term: string) {
+    const year = Number(term.match(/20\d{2}/)?.[0] ?? "2026");
+    if (/spring/i.test(term)) return { start: new Date(year, 0, 12), until: `${year}0501T235959Z` };
+    if (/summer/i.test(term)) return { start: new Date(year, 4, 11), until: `${year}0807T235959Z` };
+    return { start: new Date(year, 7, 24), until: `${year}1211T235959Z` };
+  }
+
+  function firstDateForDay(start: Date, day: Exclude<DayOfWeek, "Online">) {
+    const target: Record<Exclude<DayOfWeek, "Online">, number> = { Su: 0, M: 1, Tu: 2, W: 3, Th: 4, F: 5, Sa: 6 };
+    const date = new Date(start);
+    date.setDate(start.getDate() + ((target[day] - start.getDay() + 7) % 7));
+    return date;
+  }
+
+  function formatIcsDateTime(date: Date, time: string) {
+    const [hour, minute] = time.split(":");
+    return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}T${hour}${minute}00`;
+  }
+
+  function escapeIcs(value: string) {
+    return value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
   }
 
   function renameActiveSchedule(name: string) {
@@ -628,32 +717,29 @@
         </svg>
       </a>
       <strong class="text-lg">Knight Planner</strong>
-      <div class="hidden rounded-md border border-white/15 p-1 text-sm md:flex">
+    </div>
+    <div class="flex items-center gap-2 text-sm">
+      <div class="hidden items-center gap-1 md:flex">
         <button
-          class={`rounded px-3 py-1 font-bold ${activeView === "planner" ? "bg-ucfGold text-black" : "text-white/70 hover:text-white"}`}
+          class={`rounded-md px-2 py-1 font-bold ${activeView === "planner" ? "text-ucfGold underline decoration-ucfGold decoration-2 underline-offset-4" : "text-white/80 hover:bg-white/10 hover:text-white"}`}
           on:click={() => (activeView = "planner")}
         >
           Course Planner
         </button>
         <button
-          class={`rounded px-3 py-1 font-bold ${activeView === "generator" ? "bg-ucfGold text-black" : "text-white/70 hover:text-white"}`}
+          class={`rounded-md px-2 py-1 font-bold ${activeView === "generator" ? "text-ucfGold underline decoration-ucfGold decoration-2 underline-offset-4" : "text-white/80 hover:bg-white/10 hover:text-white"}`}
           on:click={() => (activeView = "generator")}
         >
           Schedule Generator
         </button>
-        <button
-          class={`rounded px-3 py-1 font-bold ${activeView === "requirements" ? "bg-ucfGold text-black" : "text-white/70 hover:text-white"}`}
-          on:click={() => (activeView = "requirements")}
-        >
-          Requirements
-        </button>
       </div>
-    </div>
-    <div class="flex items-center gap-2 text-sm">
       <a class="hidden rounded-md px-2 py-1 hover:bg-white/10 sm:inline-flex" href={issueMailto}>Report an issue</a>
       <div class="relative hidden sm:block">
-        <button class="rounded-md px-2 py-1 hover:bg-white/10" on:click={() => (aboutMenuOpen = !aboutMenuOpen)}>
-          About {aboutMenuOpen ? "⌃" : "⌄"}
+        <button class="inline-flex items-center rounded-md px-2 py-1 hover:bg-white/10" on:click={() => (aboutMenuOpen = !aboutMenuOpen)}>
+          About
+          <svg class={`ml-1 h-4 w-4 transition-transform ${aboutMenuOpen ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
         </button>
         {#if aboutMenuOpen}
           <div class="absolute right-0 mt-2 w-44 rounded-md border border-outlineDark bg-bgDark p-2 text-base font-bold text-textDark shadow-xl">
@@ -965,7 +1051,7 @@
       <WeeklyCalendar {blocks} {removeSelection} {removeCustomEvent} />
     </section>
   </div>
-  {:else if activeView === "generator"}
+  {:else}
     <section class="fixed bottom-0 top-12 grid w-full grid-cols-1 overflow-auto bg-bgLight px-4 py-5 dark:bg-bgDark lg:grid-cols-[24rem_minmax(0,1fr)]">
       <aside class="border-divBorderLight pr-4 dark:border-divBorderDark lg:border-r">
         <div class="mb-5 flex items-center justify-between">
@@ -974,7 +1060,7 @@
         </div>
         <input
           bind:value={query}
-          placeholder="Search courses (e.g. 'MATH140') or @professor"
+          placeholder="Search courses (e.g. 'MAC2311') or @professor"
           class="w-full rounded-lg border-2 border-outlineLight bg-transparent px-3 py-2 text-base dark:border-outlineDark"
         />
         <div class="mt-2 flex items-center justify-between text-secCodesLight">
@@ -1075,32 +1161,6 @@
         </div>
       </section>
     </section>
-  {:else}
-    <section class="fixed bottom-0 top-12 w-full overflow-auto bg-bgLight px-4 py-5 dark:bg-bgDark">
-      <div class="mx-auto max-w-5xl">
-        <div class="mb-4 flex items-center justify-between border-b-2 border-divBorderLight pb-3">
-          <div>
-            <h1 class="text-2xl font-black">Requirements</h1>
-            <p class="text-sm text-black/60">Track UCF planning buckets alongside your schedules.</p>
-          </div>
-          <button class="rounded-md bg-ucfBlack px-3 py-2 text-sm font-bold text-ucfGold" on:click={() => (activeView = "planner")}>
-            Back to Planner
-          </button>
-        </div>
-
-        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {#each ["GEP Communication", "GEP Math", "GEP Science", "State Core", "Major Prereqs", "Major Core", "Electives", "Honors / Research"] as bucket}
-            <article class="rounded-md border-2 border-outlineLight bg-bgSecondaryLight p-4">
-              <div class="mb-2 flex items-center justify-between">
-                <h2 class="font-black">{bucket}</h2>
-                <span class="rounded bg-ucfGold px-2 py-0.5 text-xs font-black text-black">Plan</span>
-              </div>
-              <p class="text-sm text-black/65">Use course search to add matching classes, then compare them against this bucket.</p>
-            </article>
-          {/each}
-        </div>
-      </div>
-    </section>
   {/if}
 
   {#if modalOpen}
@@ -1154,16 +1214,25 @@
 
       {#if infoPage === "terms"}
         <div class="space-y-5">
-          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Introduction</h2><p class="mt-2">Knight Planner is a UCF schedule planning tool built by Henrique Silva Ribeiro. It is not affiliated with, endorsed by, or operated by the University of Central Florida.</p></section>
-          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Use of Knight Planner</h2><p class="mt-2">The app helps students explore live UCF catalog data, myUCF class sections, and RateMyProfessors information. Data can change at the source, so users should verify final schedules in official UCF systems before enrolling.</p></section>
-          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Disclaimer</h2><p class="mt-2">Information is provided as-is without warranty. Knight Planner is a planning aid, not a registration system.</p></section>
+          <p class="font-semibold text-secCodesLight">Last updated: June 30, 2026</p>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Introduction</h2><p class="mt-2">Knight Planner is a UCF schedule planning tool built by Henrique Silva Ribeiro. It is not affiliated with, endorsed by, sponsored by, or operated by the University of Central Florida. By using Knight Planner, you agree that it is a planning aid and that official enrollment decisions must be completed through official UCF systems.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Use of Knight Planner</h2><p class="mt-2">The app helps students explore live UCF catalog data, myUCF class sections, RateMyProfessors information, calendar exports, and generated schedule combinations. You may use the app for personal academic planning, comparing sections, and exporting tentative schedules.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Source Data</h2><p class="mt-2">Course, section, room, seat, waitlist, and instructor data can change without notice at the source. Knight Planner attempts to show live data, but it cannot guarantee availability, accuracy, or registration eligibility. Always verify CRNs, times, modalities, prerequisites, fees, holds, and enrollment status in official UCF tools before relying on a schedule.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Calendar Exports</h2><p class="mt-2">Calendar exports are generated from the schedule currently selected in your browser. Imported calendar events are still unofficial planning records and may need to be deleted or re-imported if UCF changes the official meeting pattern.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Acceptable Use</h2><p class="mt-2">Do not use Knight Planner to overload, scrape abusively, disrupt, or bypass controls on UCF or third-party systems. The app is intended for ordinary student planning and lightweight lookups.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">No Warranty</h2><p class="mt-2">Knight Planner is provided as-is, without warranties of any kind. The developer is not responsible for missed enrollment windows, incorrect registration choices, schedule conflicts, data source outages, or decisions made using the app.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Changes</h2><p class="mt-2">These terms may be updated as the project matures. The changelog records major product changes while Knight Planner remains in the version {appVersion} pre-release line.</p></section>
           <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Contact</h2><p class="mt-2">Questions and issues can be sent to <a class="text-ucfDarkGold underline" href={issueMailto}>hsribeiro1@gmail.com</a>.</p></section>
         </div>
       {:else if infoPage === "privacy"}
         <div class="space-y-5">
-          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">What Data Is Stored</h2><p class="mt-2">Schedules, custom events, theme choice, and planner preferences are stored locally in your browser. Knight Planner does not require an account for this version.</p></section>
-          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">External Sources</h2><p class="mt-2">The app requests live course data from UCF public systems and professor rating data from RateMyProfessors. Those services may receive normal request metadata such as IP address and browser headers.</p></section>
-          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Data Sharing</h2><p class="mt-2">Knight Planner does not sell or broker your planner data.</p></section>
+          <p class="font-semibold text-secCodesLight">Last updated: June 30, 2026</p>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Overview</h2><p class="mt-2">Knight Planner is designed to work without accounts in version {appVersion}. The planner keeps schedule information on your device wherever possible and uses live external sources only to retrieve course, section, and professor information.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Local Data</h2><p class="mt-2">Schedules, selected sections, custom events, hidden course variants, and theme preference may be stored in your browser local storage. This lets your planner remain available when you refresh or return later. Clearing browser data can remove saved schedules.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Calendar Files</h2><p class="mt-2">Exported `.ics` files are created in your browser from your selected schedule. After export, your calendar app controls the imported events and any data you choose to sync there.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">External Requests</h2><p class="mt-2">When you search, Knight Planner requests live information from UCF catalog and class-search systems. It may also request public professor rating information from RateMyProfessors. Those providers may receive ordinary web request metadata such as IP address, timestamp, and browser headers.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Data Sharing</h2><p class="mt-2">Knight Planner does not sell, rent, or broker your planner data. Exported calendar files are generated locally for you to download and import into your own calendar app.</p></section>
+          <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Future Accounts</h2><p class="mt-2">If cloud accounts or cross-device schedule syncing are added later, this policy should be updated before those features are treated as part of the full release.</p></section>
           <section><h2 class="border-b border-divBorderLight text-xl font-black dark:border-divBorderDark">Contact</h2><p class="mt-2"><a class="text-ucfDarkGold underline" href={issueMailto}>hsribeiro1@gmail.com</a></p></section>
         </div>
       {:else}

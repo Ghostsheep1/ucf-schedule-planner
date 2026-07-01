@@ -1,4 +1,4 @@
-export type DayOfWeek = "M" | "Tu" | "W" | "Th" | "F" | "Online";
+export type DayOfWeek = "M" | "Tu" | "W" | "Th" | "F" | "Sa" | "Su" | "Online";
 export type Campus = "Main" | "Downtown" | "Rosen" | "Online";
 export type InstructionMode = "in-person" | "online" | "hybrid";
 

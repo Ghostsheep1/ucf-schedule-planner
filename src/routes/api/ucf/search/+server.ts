@@ -12,15 +12,18 @@ export const GET: RequestHandler = async ({ url }) => {
     return json({ courses: [], sourceStatus: "Enter at least 2 characters." });
   }
 
-  if (query.startsWith("@")) {
+  const professorToken = query.match(/@("?)([^"]+)\1/)?.[2]?.trim() ?? "";
+  const catalogQuery = query.replace(/@("?)[^"]+\1/g, "").trim();
+
+  if (professorToken && catalogQuery.length < 2) {
     return json({
       courses: [],
-      sourceStatus: "Professor search works inside returned myUCF section rows. Search a course or department with @professor to narrow live sections."
+      sourceStatus: "Add a UCF department or course before @professor, for example PHY @stolbov, so Knight Planner knows which live sections to inspect."
     });
   }
 
   try {
-    const catalogCourses = await searchUcfCatalog(query, 10, { includeDetails: includeSections });
+    const catalogCourses = await searchUcfCatalog(catalogQuery || query, 10, { includeDetails: includeSections });
     const courses = includeSections
       ? await Promise.all(
           catalogCourses.map(async (course) => ({

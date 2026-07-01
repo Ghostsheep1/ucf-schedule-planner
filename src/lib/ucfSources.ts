@@ -25,11 +25,12 @@ export const ucfAttributeTags = [
 ];
 
 type KualiSearchResult = {
+  __catalogCourseId?: string;
   id: string;
   pid: string;
   title: string;
   description?: string;
-  code: string;
+  code?: string;
   number?: string;
   subjectCode?: { name?: string; description?: string };
   groupFilter1?: { name?: string };
@@ -51,6 +52,11 @@ type SectionFetchOptions = {
 };
 type CatalogSearchOptions = {
   includeDetails?: boolean;
+};
+
+export type UcfSubject = {
+  code: string;
+  name: string;
 };
 
 export function stripHtml(html = "") {
@@ -89,6 +95,10 @@ export function catalogSearchQueries(input: string) {
   return [...queries];
 }
 
+function isDepartmentOnlyQuery(input: string) {
+  return /^[A-Z]{2,4}$/.test(normalizeCourseCode(input));
+}
+
 async function kualiFetch<T>(path: string): Promise<T> {
   const response = await fetch(`${UCF_KUALI_BASE}${path}`, {
     headers: {
@@ -104,6 +114,20 @@ async function kualiFetch<T>(path: string): Promise<T> {
 }
 
 export async function searchUcfCatalog(query: string, limit = 10, options: CatalogSearchOptions = {}) {
+  if (isDepartmentOnlyQuery(query)) {
+    const subject = normalizeCourseCode(query);
+    const directMatches = await coursesForSubject(subject, limit, options);
+    if (directMatches.length > 0) return directMatches;
+
+    const subjects = await fetchUcfSubjects();
+    const alias =
+      subjects.find((item) => item.code === subject.replace(/S$/, "")) ??
+      subjects.find((item) => item.code !== subject && item.name.toUpperCase() === subject) ??
+      subjects.find((item) => item.code !== subject && item.name.toUpperCase().startsWith(subject)) ??
+      subjects.find((item) => item.code !== subject && item.name.toUpperCase().includes(subject));
+    return alias ? coursesForSubject(alias.code, limit, options) : [];
+  }
+
   const seen = new Set<string>();
   const allCourses: Course[] = [];
   for (const searchQuery of catalogSearchQueries(query)) {
@@ -120,15 +144,43 @@ export async function searchUcfCatalog(query: string, limit = 10, options: Catal
   const code = likelyCourseCode(query);
   if (code) {
     const base = code.replace(/[A-Z]+$/, "");
-    allCourses.sort((a, b) => {
+    const codeFamily = allCourses.filter((course) => normalizeCourseCode(course.code).startsWith(base));
+    const sortable = codeFamily.length ? codeFamily : allCourses;
+    sortable.sort((a, b) => {
       const aCode = normalizeCourseCode(a.code);
       const bCode = normalizeCourseCode(b.code);
       const aScore = aCode === code ? 0 : aCode === base ? 1 : aCode.startsWith(base) ? 2 : 3;
       const bScore = bCode === code ? 0 : bCode === base ? 1 : bCode.startsWith(base) ? 2 : 3;
-      return aScore - bScore || a.code.localeCompare(b.code);
+      return aScore - bScore || compareCourseCodes(a, b);
     });
+    return sortable.slice(0, limit);
+  } else {
+    allCourses.sort(compareCourseCodes);
   }
   return allCourses.slice(0, limit);
+}
+
+async function coursesForSubject(subject: string, limit: number, options: CatalogSearchOptions) {
+  const catalogCourses = await kualiFetch<KualiCourse[]>(`/courses/${UCF_CATALOG_ID}`);
+  const matches = catalogCourses
+    .filter((course) => (course.subjectCode?.name ?? splitCourseCode(course.code || course.__catalogCourseId || "").subject).toUpperCase() === subject)
+    .sort(compareCourseCodes)
+    .slice(0, limit);
+  return options.includeDetails ? Promise.all(matches.map((course) => getUcfCatalogCourse(course))) : matches.map(catalogResultToCourse);
+}
+
+function compareCourseCodes(a: { code?: string; __catalogCourseId?: string }, b: { code?: string; __catalogCourseId?: string }) {
+  const parse = (code: string) => normalizeCourseCode(code).match(/^([A-Z]+)(\d+)([A-Z]*)$/);
+  const aCode = a.code || a.__catalogCourseId || "";
+  const bCode = b.code || b.__catalogCourseId || "";
+  const aMatch = parse(aCode);
+  const bMatch = parse(bCode);
+  if (!aMatch || !bMatch) return aCode.localeCompare(bCode);
+  return (
+    aMatch[1].localeCompare(bMatch[1]) ||
+    Number(aMatch[2]) - Number(bMatch[2]) ||
+    aMatch[3].localeCompare(bMatch[3])
+  );
 }
 
 async function searchUcfCatalogOnce(query: string, limit = 10, options: CatalogSearchOptions = {}) {
@@ -145,7 +197,7 @@ async function searchUcfCatalogOnce(query: string, limit = 10, options: CatalogS
 }
 
 function catalogResultToCourse(result: KualiSearchResult): Course {
-  const code = result.code;
+  const code = result.code || result.__catalogCourseId || "";
   return {
     id: result.id || result.pid || code,
     code,
@@ -162,7 +214,7 @@ function catalogResultToCourse(result: KualiSearchResult): Course {
 
 export async function getUcfCatalogCourse(result: KualiSearchResult): Promise<Course> {
   const detail = await kualiFetch<KualiCourse>(`/course/${UCF_CATALOG_ID}/${result.pid}`);
-  const code = detail.code || result.code;
+  const code = detail.code || detail.__catalogCourseId || result.code || result.__catalogCourseId || "";
   return {
     id: detail.id || result.id || code,
     code,
@@ -262,6 +314,56 @@ function allFormFields(html: string) {
     params.append(name, value);
   });
   return params;
+}
+
+export async function fetchUcfSubjects(): Promise<UcfSubject[]> {
+  const catalogCourses = await kualiFetch<KualiCourse[]>(`/courses/${UCF_CATALOG_ID}`);
+  const catalogSubjects = subjectListFromCourses(catalogCourses);
+  if (catalogSubjects.length) return catalogSubjects;
+
+  const first = await peopleSoftFetch(UCF_CLASS_SEARCH_URL);
+  const $ = cheerio.load(first.html);
+  const subjects = new Map<string, string>();
+
+  $("select").each((_, select) => {
+    const selectElement = $(select);
+    const selectKey = `${selectElement.attr("name") ?? ""} ${selectElement.attr("id") ?? ""}`.toUpperCase();
+    if (!selectKey.includes("SUBJECT")) return;
+
+    selectElement.find("option").each((__, element) => {
+      const option = $(element);
+      const value = (option.attr("value") ?? "").trim().toUpperCase();
+      const label = option.text().replace(/\s+/g, " ").trim();
+      if (!/^[A-Z]{2,4}$/.test(value) || !label || /^select/i.test(label)) return;
+
+      const name = cleanSubjectName(value, label);
+      subjects.set(value, name || value);
+    });
+  });
+
+  return [...subjects.entries()]
+    .map(([code, name]) => ({ code, name }))
+    .sort((a, b) => a.code.localeCompare(b.code));
+}
+
+function subjectListFromCourses(courses: KualiCourse[]) {
+  const subjects = new Map<string, string>();
+  courses.forEach((course) => {
+    const code = course.subjectCode?.name?.trim().toUpperCase();
+    const description = course.subjectCode?.description?.trim() ?? "";
+    if (!code || !/^[A-Z]{2,4}$/.test(code)) return;
+    subjects.set(code, cleanSubjectName(code, description || code));
+  });
+  return [...subjects.entries()]
+    .map(([code, name]) => ({ code, name }))
+    .sort((a, b) => a.code.localeCompare(b.code));
+}
+
+function cleanSubjectName(code: string, label: string) {
+  return label
+    .replace(new RegExp(`^${code}\\s*[-–:]?\\s*`, "i"), "")
+    .replace(/\s*\([^)]*\)\s*$/g, "")
+    .trim();
 }
 
 export async function fetchUcfClassSections(courseCode: string, term: string, options: SectionFetchOptions = {}): Promise<Section[]> {
@@ -453,10 +555,10 @@ function inferCampus(text: string): Campus {
 }
 
 function parseMeetingText(text: string): Meeting[] {
-  const dayMap: Record<string, DayOfWeek> = { Mo: "M", Tu: "Tu", We: "W", Th: "Th", Fr: "F" };
-  const matches = [...text.matchAll(/\b(Mo|Tu|We|Th|Fr)+\b.*?(\d{1,2}:\d{2})(AM|PM)\s*-\s*(\d{1,2}:\d{2})(AM|PM)/gi)];
+  const dayMap: Record<string, DayOfWeek> = { Mo: "M", Tu: "Tu", We: "W", Th: "Th", Fr: "F", Sa: "Sa", Su: "Su" };
+  const matches = [...text.matchAll(/\b(Mo|Tu|We|Th|Fr|Sa|Su)+\b.*?(\d{1,2}:\d{2})(AM|PM)\s*-\s*(\d{1,2}:\d{2})(AM|PM)/gi)];
   const meetings = matches.flatMap((match) => {
-    const days = match[0].match(/Mo|Tu|We|Th|Fr/g) ?? [];
+    const days = match[0].match(/Mo|Tu|We|Th|Fr|Sa|Su/g) ?? [];
     return days.map((day) => ({
       dayOfWeek: dayMap[day],
       startTime: to24Hour(match[2], match[3]),
