@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import ProfessorRating from "$lib/ProfessorRating.svelte";
   import WeeklyCalendar from "$lib/WeeklyCalendar.svelte";
   import type { CalendarBlock, Course, CustomEvent, DayOfWeek, Filters, PlannerState, SchedulePlan, Section } from "$lib/types";
@@ -18,12 +18,12 @@
     minutesToDisplay,
     overlaps,
     sectionToBlocks,
-    selectedCourse,
     timeToMinutes,
     uid,
     uniqueCredits
   } from "$lib/planner";
   import { ucfAttributeTags } from "$lib/ucfSources";
+  import { formatInstructorName } from "$lib/format";
 
   const terms = ["Fall 2026", "Spring 2027", "Summer 2027"];
   const plannerKey = "knight-planner-state-v2-svelte";
@@ -81,6 +81,7 @@
   let infoPage: "about" | "terms" | "privacy" | "changelog" | null = null;
   let darkMode = false;
   let scheduleDropdownOpen = false;
+  let scheduleNameInput: HTMLInputElement;
   let modalOpen = false;
   let notice = "";
   let expanded: Record<string, boolean> = {};
@@ -89,6 +90,7 @@
   let sectionLoaded: Record<string, boolean> = {};
   let detailLoading: Record<string, boolean> = {};
   let hoveredSection: { course: Course; section: Section } | null = null;
+  let selectedBlockSourceId = "";
   let searchFocused = false;
   let suggestionsDismissed = false;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -141,6 +143,7 @@
       }).map((block) => ({ ...block, preview: true }))
     : [];
   $: blocks = [...baseBlocks, ...hoverBlocks];
+  $: selectedBlockDetail = selectedPairs.find(({ selection }) => selection.id === selectedBlockSourceId);
   $: searchKey = `${planner.term}\n${query.trim()}`;
 
   onMount(() => {
@@ -264,6 +267,31 @@
 
   function sameCourseCode(a: string, b: string) {
     return a.toUpperCase().replace(/[^A-Z0-9]/g, "") === b.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  }
+
+  function selectedSectionFor(course: Course, section: Section) {
+    return activeSchedule.selections.find(
+      (selection) => sameCourseCode(selection.course?.code ?? selection.courseId, course.code) && selection.sectionId === section.id
+    );
+  }
+
+  function ucfMapUrl(building?: string) {
+    const code = building?.trim().toUpperCase();
+    return code ? `https://map.ucf.edu/?show=${encodeURIComponent(code)}` : "https://map.ucf.edu/";
+  }
+
+  function sectionWaitlistText(section: Section) {
+    if (section.waitlistTotal === undefined) return "";
+    if (section.waitlistCapacity !== undefined) return `Waitlist: ${section.waitlistTotal} / ${section.waitlistCapacity}`;
+    if (section.waitlistTotal > 0) return `Waitlist: ${section.waitlistTotal}`;
+    return "";
+  }
+
+  function sectionSeatText(section: Section) {
+    if (section.seatDetailsStatus === "loading") return "Seat and waitlist details loading...";
+    if (section.seatsTotal <= 0) return "Seat count unavailable";
+    const enrolled = section.enrollmentTotal !== undefined ? ` (${section.enrollmentTotal} enrolled)` : "";
+    return `${section.seatsAvailable} / ${section.seatsTotal} seats available${enrolled}`;
   }
 
   function professorNameMatches(professorName: string, professorQuery: string) {
@@ -420,6 +448,21 @@
     };
   }
 
+  async function focusScheduleName() {
+    await tick();
+    scheduleNameInput?.focus();
+    scheduleNameInput?.select();
+  }
+
+  async function switchSchedule(scheduleId: string) {
+    planner = {
+      ...planner,
+      activeScheduleIdByTerm: { ...planner.activeScheduleIdByTerm, [planner.term]: scheduleId }
+    };
+    scheduleDropdownOpen = false;
+    await focusScheduleName();
+  }
+
   function createSchedule() {
     const next = { ...initialSchedule(), name: `New schedule ${schedules.length + 1}` };
     planner = {
@@ -428,6 +471,7 @@
       activeScheduleIdByTerm: { ...planner.activeScheduleIdByTerm, [planner.term]: next.id }
     };
     scheduleDropdownOpen = false;
+    void focusScheduleName();
   }
 
   function exportSchedule() {
@@ -462,7 +506,7 @@
           `DTEND:${formatIcsDateTime(firstDate, first.endTime)}`,
           `RRULE:FREQ=WEEKLY;BYDAY=${meetings.map((meeting) => dayToIcs[meeting.dayOfWeek as Exclude<DayOfWeek, "Online">]).join(",")};UNTIL=${until}`,
           `LOCATION:${escapeIcs(location)}`,
-          `DESCRIPTION:${escapeIcs(`Course: ${course.title}\\nInstructors: ${section.professorName}`)}`,
+          `DESCRIPTION:${escapeIcs(`Course: ${course.title}\\nInstructors: ${formatInstructorName(section.professorName)}`)}`,
           `UID:${escapeIcs(`${course.code}-${section.sectionNumber}-${first.startTime.replace(":", "")}@knight-planner`)}`,
           "END:VEVENT"
         );
@@ -510,7 +554,11 @@
   }
 
   function renameActiveSchedule(name: string) {
-    updateActiveSchedule((schedule) => ({ ...schedule, name: name.trim() || "My schedule" }));
+    updateActiveSchedule((schedule) => ({ ...schedule, name }));
+  }
+
+  function finalizeScheduleName() {
+    updateActiveSchedule((schedule) => ({ ...schedule, name: schedule.name.trim() || "My schedule" }));
   }
 
   function duplicateSchedule() {
@@ -548,42 +596,40 @@
   }
 
   function addSection(course: Course, section: Section) {
-    const duplicate = activeSchedule.selections.find(
-      (selection) => selection.course?.code === course.code && selection.sectionId === section.id && selection.courseId !== course.id
+    const existing = activeSchedule.selections.find(
+      (selection) => sameCourseCode(selection.course?.code ?? selection.courseId, course.code) && selection.sectionId === section.id
     );
-    if (duplicate) {
-      notice = `${course.code} section ${section.sectionNumber} is already on this schedule.`;
-      return;
-    }
-    const replacing =
-      selectedCourse(activeSchedule, course.id) ??
-      activeSchedule.selections.find((selection) => selection.course?.code === course.code || selection.courseId === course.code);
-    if (replacing?.sectionId === section.id) {
-      removeSelection(replacing.id);
+    if (existing) {
+      removeSelection(existing.id);
       notice = `${course.code} section ${section.sectionNumber} removed.`;
       return;
     }
-    if (candidateConflicts(activeSchedule, course, section, course.id)) {
+    if (candidateConflicts(activeSchedule, course, section)) {
       notice = `${course.code} ${section.sectionNumber} conflicts with the active schedule.`;
       return;
     }
     updateActiveSchedule((schedule) => ({
       ...schedule,
       selections: [
-        ...schedule.selections.filter((selection) => selection.courseId !== course.id),
+        ...schedule.selections,
         {
-          id: replacing?.id ?? uid("selection"),
+          id: uid("selection"),
           courseId: course.id,
           sectionId: section.id,
           course,
-          color: replacing?.color ?? colorForIndex(schedule.selections.length)
+          color: colorForIndex(schedule.selections.length)
         }
       ]
     }));
-    notice = replacing ? `${course.code} replaced with section ${section.sectionNumber}.` : `${course.code} section ${section.sectionNumber} added.`;
+    notice = `${course.code} section ${section.sectionNumber} added.`;
+  }
+
+  function selectCalendarBlock(sourceId: string) {
+    selectedBlockSourceId = selectedPairs.some(({ selection }) => selection.id === sourceId) ? sourceId : "";
   }
 
   function removeSelection(sourceId: string) {
+    if (selectedBlockSourceId === sourceId) selectedBlockSourceId = "";
     updateActiveSchedule((schedule) => ({ ...schedule, selections: schedule.selections.filter((selection) => selection.id !== sourceId) }));
   }
 
@@ -855,9 +901,14 @@
               </button>
               <input
                 id="schedule-name-input"
-                class="mr-1 min-w-0 grow cursor-text rounded border-none bg-bgLight px-0.5 py-0 text-sm outline-none"
+                bind:this={scheduleNameInput}
+                class="mr-1 min-w-0 grow cursor-text rounded border-none bg-transparent px-0.5 py-0 text-sm font-bold outline-none focus:ring-2 focus:ring-ucfGold"
                 value={activeSchedule.name}
                 on:input={(event) => renameActiveSchedule(event.currentTarget.value)}
+                on:blur={finalizeScheduleName}
+                on:keydown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
                 title="Schedule name"
               />
             </div>
@@ -887,13 +938,7 @@
                 <div class="flex h-6 w-full flex-row">
                   <button
                     class="h-6 min-w-0 grow items-center rounded-md pl-1.5 text-left text-sm hover:bg-hoverLight"
-                    on:click={() => {
-                      planner = {
-                        ...planner,
-                        activeScheduleIdByTerm: { ...planner.activeScheduleIdByTerm, [planner.term]: schedule.id }
-                      };
-                      scheduleDropdownOpen = false;
-                    }}
+                    on:click={() => void switchSchedule(schedule.id)}
                   >
                     <span class="block w-full min-w-0 overflow-x-auto whitespace-nowrap">{schedule.name}</span>
                   </button>
@@ -1038,9 +1083,9 @@
             {/if}
 
             {#each course.sections as section}
-              {@const chosen = selectedCourse(activeSchedule, course.id) ?? activeSchedule.selections.find((selection) => selection.course?.code === course.code)}
-              {@const isChosen = chosen?.sectionId === section.id}
-              {@const conflicts = !isChosen && candidateConflicts(activeSchedule, course, section, course.id)}
+              {@const chosen = selectedSectionFor(course, section)}
+              {@const isChosen = Boolean(chosen)}
+              {@const conflicts = !isChosen && candidateConflicts(activeSchedule, course, section)}
               <button
                 class={`flex w-full flex-row border-t-2 border-outlineLight pb-1 text-left transition ${isChosen ? "bg-lightOrange" : conflicts ? "cursor-not-allowed bg-red-50 text-black/60" : "hover:bg-hoverLight"}`}
                 disabled={conflicts}
@@ -1054,18 +1099,16 @@
                 <div class="w-12 shrink-0 pt-1 text-sm font-semibold text-secCodesLight xl:w-14 xl:text-base">{section.sectionNumber}</div>
                 <div class="min-w-0 grow py-1">
                   <div class="text-sm">
-                    <b>{section.professorName}</b>
-                    <ProfessorRating name={section.professorName} />
+                    <b>{formatInstructorName(section.professorName)}</b>
+                    <ProfessorRating name={formatInstructorName(section.professorName)} />
                     {#if isChosen}<span class="float-right text-green-700">✓</span>{/if}
                   </div>
                   <div class="pb-1 text-xs font-medium">
                     {#if section.seatDetailsStatus === "loading" || detailLoading[course.id]}
                       Seat and waitlist details loading...
                     {:else if section.seatsTotal > 0}
-                      {section.seatsAvailable} / {section.seatsTotal} seats available
-                      {#if section.enrollmentTotal !== undefined} ({section.enrollmentTotal} enrolled){/if}
-                      {#if section.waitlistTotal !== undefined && section.waitlistCapacity !== undefined} | Waitlist: {section.waitlistTotal} / {section.waitlistCapacity}{/if}
-                      {#if section.waitlistTotal !== undefined && section.waitlistCapacity === undefined && section.waitlistTotal > 0} | Waitlist size: {section.waitlistTotal}{/if}
+                      {sectionSeatText(section)}
+                      {#if sectionWaitlistText(section)} | {sectionWaitlistText(section)}{/if}
                     {:else}
                       Seat count unavailable
                     {/if}
@@ -1075,7 +1118,7 @@
                       <span class="grow">{dayLabels[meeting.dayOfWeek]} {formatTimeRange(meeting.startTime, meeting.endTime)}</span>
                       <span class="grow text-right">
                         {#if meeting.building}
-                          <a class="rounded-md p-0.5 text-ucfDarkGold underline hover:bg-hoverLight" href={`https://map.ucf.edu/?show=${meeting.building}`} target="_blank" rel="noreferrer" on:click|stopPropagation>
+                          <a class="rounded-md p-0.5 text-ucfDarkGold underline hover:bg-hoverLight" href={ucfMapUrl(meeting.building)} target="_blank" rel="noreferrer" on:click|stopPropagation>
                             {[meeting.building, meeting.room].filter(Boolean).join(" ")}
                           </a>
                         {/if}
@@ -1126,7 +1169,53 @@
           <span class="rounded-md bg-bgSecondaryLight px-2 py-1 text-black">myUCF</span>
         </div>
       </div>
-      <WeeklyCalendar {blocks} {removeSelection} {removeCustomEvent} />
+      <WeeklyCalendar {blocks} {removeSelection} {removeCustomEvent} selectBlock={selectCalendarBlock} />
+      {#if selectedBlockDetail}
+        {@const course = selectedBlockDetail.course}
+        {@const section = selectedBlockDetail.section}
+        <section class="mt-2 rounded-lg border-2 border-outlineLight bg-bgSecondaryLight p-3 text-sm leading-snug text-textLight shadow-sm dark:border-outlineDark dark:bg-bgDark dark:text-textDark">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 class="text-xl font-black">
+              {course.code} - {course.title}
+              {#if course.scheduleUrl}
+                <a class="ml-1 text-base font-bold text-ucfDarkGold underline" href={course.scheduleUrl} target="_blank" rel="noreferrer">(view in myUCF)</a>
+              {:else if course.catalogUrl}
+                <a class="ml-1 text-base font-bold text-ucfDarkGold underline" href={course.catalogUrl} target="_blank" rel="noreferrer">(view on UCF Catalog)</a>
+              {/if}
+            </h2>
+            <button class="rounded-md px-2 py-1 text-lg font-black hover:bg-hoverLight dark:hover:bg-hoverDark" aria-label="Close course details" on:click={() => (selectedBlockSourceId = "")}>×</button>
+          </div>
+          <p class="font-bold">{course.credits} credits | Section {section.sectionNumber}</p>
+          {#if course.genEdTags.length}
+            <p><b class="underline">GenEds:</b> {course.genEdTags.join(", ")}</p>
+          {/if}
+          <p><b>Instructor:</b> {formatInstructorName(section.professorName)}</p>
+          {#each section.meetings as meeting}
+            <p>
+              {dayLabels[meeting.dayOfWeek]} {formatTimeRange(meeting.startTime, meeting.endTime)}
+              {#if meeting.building}
+                in
+                <a class="font-bold text-ucfDarkGold underline" href={ucfMapUrl(meeting.building)} target="_blank" rel="noreferrer">
+                  {[meeting.building, meeting.room].filter(Boolean).join(" ")}
+                </a>
+              {:else if meeting.dayOfWeek === "Online"}
+                Online
+              {/if}
+            </p>
+          {/each}
+          <p>
+            {sectionSeatText(section)}
+            {#if sectionWaitlistText(section)} | {sectionWaitlistText(section)}{/if}
+          </p>
+          {#if course.prerequisites}
+            <p class="mt-3"><b class="underline">Prerequisite:</b></p>
+            <p>{course.prerequisites}</p>
+          {/if}
+          {#if course.description}
+            <p class="mt-3">{course.description}</p>
+          {/if}
+        </section>
+      {/if}
     </section>
   </div>
   {:else}
@@ -1228,7 +1317,7 @@
               </div>
               {#each getSelectionPairs(result) as { course, section }}
                 <div class="border-t border-divBorderLight py-1 text-sm dark:border-divBorderDark">
-                  <b>{course.code}</b> {section.sectionNumber} · {section.professorName}
+                  <b>{course.code}</b> {section.sectionNumber} · {formatInstructorName(section.professorName)}
                   <div class="text-xs text-secCodesLight">
                     {#each section.meetings as meeting}{dayLabels[meeting.dayOfWeek]} {formatTimeRange(meeting.startTime, meeting.endTime)} {/each}
                   </div>
