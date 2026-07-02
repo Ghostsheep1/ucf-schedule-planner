@@ -80,7 +80,7 @@
 >
   <div
     class="grid min-w-[900px] border-b border-divBorderLight bg-white font-bold text-textLight dark:border-divBorderDark dark:bg-bgDark dark:text-textDark"
-    style={`grid-template-columns:3.75rem repeat(${shownColumns.length}, minmax(9rem, 1fr))`}
+    style={`grid-template-columns:5rem repeat(${shownColumns.length}, minmax(9rem, 1fr))`}
   >
     <div class="border-r border-divBorderLight dark:border-divBorderDark"></div>
     {#each shownColumns as day}
@@ -88,10 +88,10 @@
     {/each}
   </div>
 
-  <div class="grid min-w-[900px] bg-white dark:bg-bgDark" style={`height:${gridHeight}px;grid-template-columns:3.75rem repeat(${shownColumns.length}, minmax(9rem, 1fr))`}>
+  <div class="grid min-w-[900px] bg-white dark:bg-bgDark" style={`height:${gridHeight}px;grid-template-columns:5rem repeat(${shownColumns.length}, minmax(9rem, 1fr))`}>
     <div class="relative border-r border-divBorderLight bg-white dark:border-divBorderDark dark:bg-bgDark">
       {#each hours as hour}
-        <div class="absolute left-0 right-0 z-10 -translate-y-1/2 bg-white pr-2 text-right text-xs font-bold text-secCodesLight dark:bg-bgDark dark:text-textDark/70" style={`top:${(hour - start) * minuteHeight}px`}>
+        <div class="absolute left-0 right-0 z-10 -translate-y-1/2 whitespace-nowrap bg-white pr-2 text-right text-xs font-bold text-secCodesLight dark:bg-bgDark dark:text-textDark/70" style={`top:${(hour - start) * minuteHeight}px`}>
           {minutesToDisplay(hour)}
         </div>
       {/each}
