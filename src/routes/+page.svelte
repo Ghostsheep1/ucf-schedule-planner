@@ -744,7 +744,12 @@
   }
 
   function generatorConfig(course: Course) {
-    return generatorCourseConfigs[course.id] ?? defaultGeneratorCourseConfig(course);
+    const config = generatorCourseConfigs[course.id] ?? defaultGeneratorCourseConfig(course);
+    return {
+      ...config,
+      sectionId: config.sectionId || course.sections[0]?.id || "",
+      professorName: config.professorName || uniqueProfessors(course)[0] || ""
+    };
   }
 
   function updateGeneratorCourseConfig(course: Course, updates: Partial<GeneratorCourseConfig>) {
@@ -1380,31 +1385,31 @@
                     <b class="text-lg">{course.code}</b>
                     <div class="truncate text-sm font-semibold text-secCodesLight">{course.title}</div>
                   </div>
-                  <div class="flex items-center gap-2">
-                    <div class="grid grid-cols-2 overflow-hidden rounded-md border border-outlineLight text-sm dark:border-outlineDark">
-                      <button class={`px-2 py-1 font-black ${config.required ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { required: true })}>Required</button>
-                      <button class={`px-2 py-1 font-black ${!config.required ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { required: false })}>Optional</button>
+                  <div class="flex shrink-0 items-center gap-2">
+                    <div class="grid w-36 grid-cols-2 overflow-hidden rounded-md border border-outlineLight text-sm dark:border-outlineDark">
+                      <button class={`min-w-0 whitespace-nowrap px-2 py-1 font-black ${config.required ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { required: true })}>Required</button>
+                      <button class={`min-w-0 whitespace-nowrap px-2 py-1 font-black ${!config.required ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { required: false })}>Optional</button>
                     </div>
                     <button class="text-xl font-black text-secCodesLight" aria-label={`Remove ${course.code}`} on:click={() => removeGeneratorCourse(course.id)}>×</button>
                   </div>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="font-bold text-secCodesLight">Pin to:</span>
-                  <div class="grid grid-cols-3 overflow-hidden rounded-md border border-outlineLight dark:border-outlineDark">
-                    <button class={`px-2 py-1 font-bold ${config.pinMode === "any" ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { pinMode: "any" })}>Any</button>
-                    <button class={`px-2 py-1 font-bold ${config.pinMode === "section" ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { pinMode: "section", sectionId: config.sectionId || course.sections[0]?.id || "" })}>Section</button>
-                    <button class={`px-2 py-1 font-bold ${config.pinMode === "professor" ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { pinMode: "professor", professorName: config.professorName || professors[0] || "" })}>Professor</button>
+                  <div class="grid w-52 grid-cols-3 overflow-hidden rounded-md border border-outlineLight dark:border-outlineDark">
+                    <button class={`whitespace-nowrap px-2 py-1 font-bold ${config.pinMode === "any" ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { pinMode: "any" })}>Any</button>
+                    <button class={`whitespace-nowrap px-2 py-1 font-bold ${config.pinMode === "section" ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { pinMode: "section", sectionId: config.sectionId || course.sections[0]?.id || "" })}>Section</button>
+                    <button class={`whitespace-nowrap px-2 py-1 font-bold ${config.pinMode === "professor" ? "bg-ucfOrange text-white" : ""}`} on:click={() => updateGeneratorCourseConfig(course, { pinMode: "professor", professorName: config.professorName || professors[0] || "" })}>Professor</button>
                   </div>
                   {#if config.pinMode === "section"}
-                    <select class="min-w-28 rounded-md border border-outlineLight bg-transparent px-2 py-1 dark:border-outlineDark" value={config.sectionId} on:change={(event) => updateGeneratorCourseConfig(course, { sectionId: event.currentTarget.value })}>
+                    <select class="min-w-28 rounded-md border border-outlineLight bg-white px-2 py-1 text-textLight dark:border-outlineDark dark:bg-bgSecondaryDark dark:text-textDark" value={config.sectionId} on:change={(event) => updateGeneratorCourseConfig(course, { sectionId: event.currentTarget.value })}>
                       {#each course.sections as section}
-                        <option value={section.id}>{section.sectionNumber}</option>
+                        <option class="bg-white text-black dark:bg-bgSecondaryDark dark:text-textDark" value={section.id}>{section.sectionNumber}</option>
                       {/each}
                     </select>
                   {:else if config.pinMode === "professor"}
-                    <select class="min-w-40 rounded-md border border-outlineLight bg-transparent px-2 py-1 dark:border-outlineDark" value={config.professorName} on:change={(event) => updateGeneratorCourseConfig(course, { professorName: event.currentTarget.value })}>
+                    <select class="min-w-40 rounded-md border border-outlineLight bg-white px-2 py-1 text-textLight dark:border-outlineDark dark:bg-bgSecondaryDark dark:text-textDark" value={config.professorName} on:change={(event) => updateGeneratorCourseConfig(course, { professorName: event.currentTarget.value })}>
                       {#each professors as professor}
-                        <option value={professor}>{professor}</option>
+                        <option class="bg-white text-black dark:bg-bgSecondaryDark dark:text-textDark" value={professor}>{professor}</option>
                       {/each}
                     </select>
                   {/if}
@@ -1423,23 +1428,25 @@
             <button class="text-sm font-bold text-secCodesLight" on:click={clearGeneratorConstraints}>Clear</button>
           </div>
           <div class="grid gap-3 text-sm">
-            <label class="grid grid-cols-[7rem_1fr] items-center gap-2">No class before
-              <select class="rounded-md border border-outlineLight bg-transparent px-2 py-1 dark:border-outlineDark" bind:value={generatorConstraints.noBefore}>
-                <option value="">Any time</option>
-                {#each eventTimes() as option}<option value={option.value}>{option.label}</option>{/each}
+            <label class="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-2 whitespace-nowrap">No class before
+              <select class="rounded-md border border-outlineLight bg-white px-2 py-1 text-textLight dark:border-outlineDark dark:bg-bgSecondaryDark dark:text-textDark" bind:value={generatorConstraints.noBefore}>
+                <option class="bg-white text-black dark:bg-bgSecondaryDark dark:text-textDark" value="">Any time</option>
+                {#each eventTimes() as option}<option class="bg-white text-black dark:bg-bgSecondaryDark dark:text-textDark" value={option.value}>{option.label}</option>{/each}
               </select>
             </label>
-            <label class="grid grid-cols-[7rem_1fr] items-center gap-2">No class after
-              <select class="rounded-md border border-outlineLight bg-transparent px-2 py-1 dark:border-outlineDark" bind:value={generatorConstraints.noAfter}>
-                <option value="">Any time</option>
-                {#each eventTimes() as option}<option value={option.value}>{option.label}</option>{/each}
+            <label class="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-2 whitespace-nowrap">No class after
+              <select class="rounded-md border border-outlineLight bg-white px-2 py-1 text-textLight dark:border-outlineDark dark:bg-bgSecondaryDark dark:text-textDark" bind:value={generatorConstraints.noAfter}>
+                <option class="bg-white text-black dark:bg-bgSecondaryDark dark:text-textDark" value="">Any time</option>
+                {#each eventTimes() as option}<option class="bg-white text-black dark:bg-bgSecondaryDark dark:text-textDark" value={option.value}>{option.label}</option>{/each}
               </select>
             </label>
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="mr-2">Days off:</span>
-              {#each days as day}
-                <button class={`rounded-md border px-3 py-1 font-bold ${generatorConstraints.daysOff.includes(day) ? "bg-ucfGold text-black" : "border-outlineLight dark:border-outlineDark"}`} on:click={() => toggleGeneratorDay(day)}>{day}</button>
-              {/each}
+            <div class="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-2">
+              <span class="whitespace-nowrap">Days off:</span>
+              <div class="grid grid-cols-7 gap-1">
+                {#each days as day}
+                  <button class={`h-9 min-w-0 rounded-md border px-1 text-sm font-bold ${generatorConstraints.daysOff.includes(day) ? "bg-ucfGold text-black" : "border-outlineLight dark:border-outlineDark"}`} on:click={() => toggleGeneratorDay(day)}>{day}</button>
+                {/each}
+              </div>
             </div>
             <label class="flex items-center gap-2">
               <input type="checkbox" bind:checked={generatorConstraints.onlyOpen} />
@@ -1496,13 +1503,13 @@
         </div>
         <div class="mt-3 grid grid-cols-2 gap-3">
           <label class="text-sm font-bold">Start
-            <select class="mt-1 w-full rounded-md border px-3 py-2" bind:value={eventStart}>
-              {#each eventTimes() as option}<option value={option.value}>{option.label}</option>{/each}
+            <select class="mt-1 w-full rounded-md border bg-white px-3 py-2 text-textLight dark:border-outlineDark dark:bg-bgSecondaryDark dark:text-textDark" bind:value={eventStart}>
+              {#each eventTimes() as option}<option class="bg-white text-black dark:bg-bgSecondaryDark dark:text-textDark" value={option.value}>{option.label}</option>{/each}
             </select>
           </label>
           <label class="text-sm font-bold">End
-            <select class="mt-1 w-full rounded-md border px-3 py-2" bind:value={eventEnd}>
-              {#each eventTimes() as option}<option value={option.value}>{option.label}</option>{/each}
+            <select class="mt-1 w-full rounded-md border bg-white px-3 py-2 text-textLight dark:border-outlineDark dark:bg-bgSecondaryDark dark:text-textDark" bind:value={eventEnd}>
+              {#each eventTimes() as option}<option class="bg-white text-black dark:bg-bgSecondaryDark dark:text-textDark" value={option.value}>{option.label}</option>{/each}
             </select>
           </label>
         </div>
