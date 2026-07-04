@@ -95,6 +95,7 @@
   let scheduleNameInput: HTMLInputElement;
   let modalOpen = false;
   let notice = "";
+  let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   let expanded: Record<string, boolean> = {};
   let hiddenCourses: Record<string, boolean> = {};
   let sectionLoading: Record<string, boolean> = {};
@@ -178,6 +179,19 @@
   }
 
   $: queueCourseSearch(searchKey);
+
+  function showNotice(message: string) {
+    notice = message;
+    if (noticeTimer) clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => {
+      notice = "";
+    }, 2600);
+  }
+
+  function dismissNotice() {
+    if (noticeTimer) clearTimeout(noticeTimer);
+    notice = "";
+  }
 
   function queueCourseSearch(key: string) {
     const [term, cleaned = ""] = key.split("\n");
@@ -650,13 +664,10 @@
     );
     if (existing) {
       removeSelection(existing.id);
-      notice = `${course.code} section ${section.sectionNumber} removed.`;
+      showNotice(`${course.code} section ${section.sectionNumber} removed.`);
       return;
     }
-    if (candidateConflicts(activeSchedule, course, section)) {
-      notice = `${course.code} ${section.sectionNumber} conflicts with the active schedule.`;
-      return;
-    }
+    const conflicts = candidateConflicts(activeSchedule, course, section);
     updateActiveSchedule((schedule) => ({
       ...schedule,
       selections: [
@@ -670,7 +681,9 @@
         }
       ]
     }));
-    notice = `${course.code} section ${section.sectionNumber} added.`;
+    showNotice(conflicts
+      ? `${course.code} section ${section.sectionNumber} added with a conflict.`
+      : `${course.code} section ${section.sectionNumber} added.`);
   }
 
   function selectCalendarBlock(sourceId: string) {
@@ -997,7 +1010,7 @@
   {#if notice}
     <div class="fixed left-1/2 top-16 z-50 max-w-[90vw] -translate-x-1/2 rounded-md border border-ucfDarkGold bg-ucfBlack px-4 py-2 text-sm font-semibold text-ucfGold shadow-lg">
       {notice}
-      <button class="ml-3 align-middle text-white" on:click={() => (notice = "")} aria-label="Dismiss notice">×</button>
+      <button class="ml-3 align-middle text-white" on:click={dismissNotice} aria-label="Dismiss notice">×</button>
     </div>
   {/if}
 
@@ -1204,13 +1217,12 @@
               {@const isChosen = Boolean(chosen)}
               {@const conflicts = !isChosen && candidateConflicts(activeSchedule, course, section)}
               <button
-                class={`flex w-full flex-row border-t-2 border-outlineLight pb-1 text-left transition ${isChosen ? "bg-lightOrange" : conflicts ? "cursor-not-allowed bg-red-50 text-black/60" : "hover:bg-hoverLight"}`}
-                disabled={conflicts}
+                class={`flex w-full flex-row border-t-2 border-outlineLight pb-1 text-left transition ${isChosen ? "bg-lightOrange" : conflicts ? "bg-red-50 text-black/70 hover:bg-red-100 dark:bg-red-950/30 dark:text-textDark" : "hover:bg-hoverLight"}`}
                 title={isChosen ? "Remove course from schedule" : "Add course to schedule"}
                 on:click={() => addSection(course, section)}
-                on:mouseenter={() => (hoveredSection = isChosen || conflicts ? null : { course, section })}
+                on:mouseenter={() => (hoveredSection = isChosen ? null : { course, section })}
                 on:mouseleave={() => (hoveredSection = null)}
-                on:focus={() => (hoveredSection = isChosen || conflicts ? null : { course, section })}
+                on:focus={() => (hoveredSection = isChosen ? null : { course, section })}
                 on:blur={() => (hoveredSection = null)}
               >
                 <div class="w-12 shrink-0 pt-1 text-sm font-semibold text-secCodesLight xl:w-14 xl:text-base">{section.sectionNumber}</div>
