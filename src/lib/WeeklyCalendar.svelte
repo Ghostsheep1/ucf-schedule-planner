@@ -8,6 +8,7 @@
   export let selectBlock: (sourceId: string) => void = () => {};
 
   const minuteHeight = 1.85;
+  type PositionedBlock = CalendarBlock & { column: number; columns: number };
 
   $: normalizedBlocks = blocks.map((block) => ({ ...block, dayOfWeek: normalizeDay(block.dayOfWeek) }));
   $: timedBlocks = normalizedBlocks.filter((block) => block.dayOfWeek !== "Online");
@@ -44,6 +45,77 @@
 
   function blockHeight(block: CalendarBlock) {
     return Math.max(44, (timeToMinutes(block.endTime) - timeToMinutes(block.startTime)) * minuteHeight - 4);
+  }
+
+  function blockStart(block: CalendarBlock) {
+    return timeToMinutes(block.startTime);
+  }
+
+  function blockEnd(block: CalendarBlock) {
+    return timeToMinutes(block.endTime);
+  }
+
+  function blocksOverlap(a: CalendarBlock, b: CalendarBlock) {
+    if (a.dayOfWeek === "Online" || b.dayOfWeek === "Online") return false;
+    return blockStart(a) < blockEnd(b) && blockStart(b) < blockEnd(a);
+  }
+
+  function positionedBlocksForDay(day: DayOfWeek): PositionedBlock[] {
+    const dayBlocks = normalizedBlocks.filter((block) => block.dayOfWeek === day);
+    if (day === "Online") return dayBlocks.map((block, index) => ({ ...block, column: index, columns: 1 }));
+
+    const sorted = [...dayBlocks].sort((a, b) => blockStart(a) - blockStart(b) || blockEnd(b) - blockEnd(a));
+    const positioned: PositionedBlock[] = [];
+    const active: PositionedBlock[] = [];
+
+    for (const block of sorted) {
+      for (let index = active.length - 1; index >= 0; index -= 1) {
+        if (blockEnd(active[index]) <= blockStart(block)) active.splice(index, 1);
+      }
+      const used = new Set(active.map((item) => item.column));
+      let column = 0;
+      while (used.has(column)) column += 1;
+      const positionedBlock: PositionedBlock = { ...block, column, columns: 1 };
+      active.push(positionedBlock);
+      positioned.push(positionedBlock);
+    }
+
+    const visited = new Set<string>();
+    for (const block of positioned) {
+      if (visited.has(block.id)) continue;
+      const group = collectOverlapGroup(block, positioned);
+      const columns = Math.max(1, ...group.map((item) => item.column + 1));
+      group.forEach((item) => {
+        item.columns = columns;
+        visited.add(item.id);
+      });
+    }
+
+    return positioned;
+  }
+
+  function collectOverlapGroup(startBlock: PositionedBlock, blocksForDay: PositionedBlock[]) {
+    const group: PositionedBlock[] = [];
+    const queue = [startBlock];
+    const seen = new Set<string>();
+    while (queue.length) {
+      const block = queue.pop()!;
+      if (seen.has(block.id)) continue;
+      seen.add(block.id);
+      group.push(block);
+      blocksForDay.forEach((other) => {
+        if (!seen.has(other.id) && blocksOverlap(block, other)) queue.push(other);
+      });
+    }
+    return group;
+  }
+
+  function blockLeft(block: PositionedBlock) {
+    return `calc(0.5rem + ${block.column} * ((100% - 1rem) / ${block.columns}))`;
+  }
+
+  function blockWidth(block: PositionedBlock) {
+    return `calc((100% - 1rem) / ${block.columns} - 0.25rem)`;
   }
 
   function compactTime(time: string) {
@@ -105,19 +177,19 @@
           {/each}
         {/if}
 
-        {#each normalizedBlocks.filter((block) => block.dayOfWeek === day) as block, index (block.id)}
+        {#each positionedBlocksForDay(day) as block, index (block.id)}
           <div
             role="button"
             tabindex={block.preview ? -1 : 0}
             class:opacity-45={block.preview}
             class:ring-2={block.conflict}
             class:ring-red-500={block.conflict}
-            class="absolute left-2 right-2 overflow-hidden rounded-xl text-center !text-black shadow-sm focus:outline-none focus:ring-2 focus:ring-ucfGold"
-            style={`top:${day === "Online" ? 8 + index * 128 : blockTop(block)}px;height:${day === "Online" ? 120 : blockHeight(block)}px;background:${block.type === "custom" ? "#d8d8d8" : block.color}`}
+            class="absolute overflow-hidden rounded-xl text-center !text-black shadow-sm focus:outline-none focus:ring-2 focus:ring-ucfGold"
+            style={`top:${day === "Online" ? 8 + index * 128 : blockTop(block)}px;left:${day === "Online" ? "0.5rem" : blockLeft(block)};width:${day === "Online" ? "calc(100% - 1rem)" : blockWidth(block)};height:${day === "Online" ? 120 : blockHeight(block)}px;background:${block.type === "custom" ? "#d8d8d8" : block.color}`}
             on:click={() => !block.preview && selectBlock(block.sourceId)}
             on:keydown={(event) => !block.preview && handleBlockKeydown(event, block)}
           >
-            <div class="flex min-h-8 items-center justify-center bg-black/10 px-8 py-1 text-xl font-black leading-tight">
+            <div class="flex min-h-7 items-center justify-center truncate bg-black/10 px-7 py-1 text-[clamp(0.8rem,1.2vw,1.25rem)] font-black leading-tight">
               {block.courseCode ?? block.title}
             </div>
             {#if !block.preview}
@@ -129,11 +201,11 @@
                 ×
               </button>
             {/if}
-            <div class="px-3 py-1 text-base leading-snug">
-              {#if block.professor}<div>{block.professor}</div>{/if}
-              <div>{compactTimeRange(block)}</div>
-              {#if block.sectionNumber}<div>Section {block.sectionNumber}</div>{/if}
-              {#if block.location}<div>{block.location}</div>{/if}
+            <div class="overflow-hidden px-2 py-1 text-[clamp(0.68rem,0.9vw,1rem)] leading-tight">
+              {#if block.professor}<div class="truncate">{block.professor}</div>{/if}
+              <div class="truncate">{compactTimeRange(block)}</div>
+              {#if block.sectionNumber}<div class="truncate">Section {block.sectionNumber}</div>{/if}
+              {#if block.location}<div class="truncate">{block.location}</div>{/if}
             </div>
           </div>
         {/each}
