@@ -1,7 +1,7 @@
 import { json } from "@sveltejs/kit";
-import { RMP_UCF_SCHOOL_ID, fetchUcfClassSections, fetchUcfProfessorCourses, searchUcfCatalog } from "$lib/ucfSources";
+import { RMP_UCF_SCHOOL_ID, fetchUcfClassSections, fetchUcfProfessorCourses, searchUcfCatalog } from "$lib/ucf/ucfSources";
 import { cached } from "$lib/server/cache";
-import type { Course } from "$lib/types";
+import type { Course } from "$lib/ucf/types";
 import type { RequestHandler } from "./$types";
 
 const tenMinutes = 10 * 60 * 1000;

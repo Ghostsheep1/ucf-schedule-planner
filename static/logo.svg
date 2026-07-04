@@ -1,0 +1,7 @@
+<svg width="260" height="64" viewBox="0 0 260 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M32 5L53 13V29C53 42 45 53 32 59C19 53 11 42 11 29V13L32 5Z" fill="#050505" stroke="#FFC904" stroke-width="4"/>
+  <path d="M32 14L42 18V30C42 37 38 43 32 47C26 43 22 37 22 30V18L32 14Z" fill="#FFC904"/>
+  <path d="M31 19H35V28L43 20H48L39 29L49 44H44L36 32L35 33V44H31V19Z" fill="#050505"/>
+  <path d="M16 29L29 19V25L20 32L16 29Z" fill="#050505"/>
+  <text x="69" y="41" fill="#F7F7F7" font-family="Cabin, Arial, sans-serif" font-size="28" font-weight="700">Knight Planner</text>
+</svg>

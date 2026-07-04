@@ -1,5 +1,5 @@
 import { json } from "@sveltejs/kit";
-import { fetchUcfSubjects } from "$lib/ucfSources";
+import { fetchUcfSubjects } from "$lib/ucf/ucfSources";
 import type { RequestHandler } from "./$types";
 
 export const GET: RequestHandler = async () => {

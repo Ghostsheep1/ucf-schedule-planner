@@ -1,5 +1,5 @@
 import { json } from "@sveltejs/kit";
-import { likelyCourseCode, searchUcfCatalog } from "$lib/ucfSources";
+import { likelyCourseCode, searchUcfCatalog } from "$lib/ucf/ucfSources";
 import { cached } from "$lib/server/cache";
 import type { RequestHandler } from "./$types";
 

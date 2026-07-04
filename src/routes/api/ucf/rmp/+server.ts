@@ -1,5 +1,5 @@
 import { json } from "@sveltejs/kit";
-import { RMP_UCF_SCHOOL_ID } from "$lib/ucfSources";
+import { RMP_UCF_SCHOOL_ID } from "$lib/ucf/ucfSources";
 import type { RequestHandler } from "./$types";
 
 type RmpTeacher = {

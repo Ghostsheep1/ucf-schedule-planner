@@ -1,19 +1,44 @@
+<!-- 
+This file is part of Jupiterp. For terms of use, please see the file
+called LICENSE at the top level of the Jupiterp source tree (online at
+https://github.com/atcupps/Jupiterp/LICENSE).
+Copyright (C) 2026 Andrew Cupps
+-->
 <!doctype html>
+<title>Knight Planner</title>
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
 		<meta
 			name="description"
-			content="Knight Planner, a UCF course schedule planner using live UCF catalog, myUCF class sections, and RateMyProfessors data."
+			content="Knight Planner helps University of Central Florida students plan schedules with live UCF catalog and class section data."
 		/>
-		<title>Knight Planner</title>
-		<link rel="icon" type="image/svg+xml" href="%sveltekit.assets%/favicon.svg?v=3" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
 		<link href="https://fonts.googleapis.com/css2?family=Cabin&display=swap" rel="stylesheet" />
+		<link rel="dns-prefetch" href="https://ucf.kuali.co" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		%sveltekit.head%
+		<script>
+			if (
+				localStorage.theme === 'dark' ||
+				(!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)
+			) {
+				document.documentElement.classList.add('dark');
+				localStorage.setItem('theme', 'dark');
+			} else {
+				document.documentElement.classList.remove('dark');
+				localStorage.setItem('theme', 'light');
+			}
+			if (localStorage.font === 'minecraft') {
+				document.documentElement.classList.add('minecraft');
+			}
+		</script>
 	</head>
 
-	<body data-sveltekit-preload-data="hover" class="min-w-96 bg-bgLight text-sm text-textLight xl:text-base">
+	<body
+		data-sveltekit-preload-data="hover"
+		class="min-w-96 bg-bgLight text-sm text-textLight xl:text-base dark:bg-bgDark dark:text-textDark"
+	>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>
