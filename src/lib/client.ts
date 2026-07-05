@@ -26,7 +26,11 @@ import type {
 	Section as UcfSection
 } from '$lib/ucf/types';
 import { normalizeCourseCode } from '$lib/ucf/ucfSources';
-import { filterIndexedCourses, loadUcfSectionIndex } from '$lib/ucf/sectionIndex';
+import {
+	filterIndexedCourses,
+	loadUcfSectionIndex,
+	type IndexedInstructor
+} from '$lib/ucf/sectionIndex';
 
 const DEFAULT_TERM = 'Fall 2026';
 
@@ -124,7 +128,10 @@ function timeToDecimal(time: string): number {
 	return hour + minute / 60;
 }
 
-function filterCourses(courses: Course[], cfg: CoursesWithSectionsConfig | CoursesConfig): Course[] {
+function filterCourses(
+	courses: Course[],
+	cfg: CoursesWithSectionsConfig | CoursesConfig
+): Course[] {
 	let result = courses;
 	if (cfg.courseCodes && cfg.courseCodes.size > 0) {
 		const codes = new Set([...cfg.courseCodes].map(normalizeCourseCode));
@@ -220,22 +227,29 @@ export const client = {
 			.map((instructor) => ({
 				name: instructor.name,
 				slug: instructor.slug,
-				average_rating: instructor.average_rating
+				average_rating: instructor.average_rating,
+				rating_count: instructor.rating_count
 			}));
 		return ok<Instructor>(instructors);
 	}
 };
 
 function deriveIndexedInstructors(courses: UcfCourse[]) {
-	const instructors = new Map<string, Instructor>();
+	const instructors = new Map<string, IndexedInstructor>();
 	courses.forEach((course) => {
 		course.sections.forEach((section) => {
 			if (!section.professorName || /^(TBA|To be Announced)$/i.test(section.professorName)) return;
 			const rating = section.professorRating ? section.professorRating.toFixed(1) : null;
 			instructors.set(section.professorName, {
 				name: section.professorName,
-				slug: section.professorRatingUrl?.split('/').pop() ?? section.professorName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
-				average_rating: rating
+				slug:
+					section.professorRatingUrl?.split('/').pop() ??
+					section.professorName
+						.toLowerCase()
+						.replace(/[^a-z0-9]+/g, '-')
+						.replace(/^-|-$/g, ''),
+				average_rating: rating,
+				rating_count: section.professorRatingCount ?? null
 			});
 		});
 	});
