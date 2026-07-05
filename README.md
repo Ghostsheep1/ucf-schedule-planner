@@ -4,9 +4,6 @@ Knight Planner is a UCF-focused course schedule planner built for searching real
 section data, comparing instructors and class times, saving schedules locally, exporting calendars,
 and generating possible schedules from course constraints.
 
-The app is modeled after the fast planner workflow students expect from Jupiterp, but customized for
-UCF branding, terms, data sources, course codes, professor ratings, and scheduling behavior.
-
 ## Features
 
 - Course Planner with saved local schedules, duplicate schedules, schedule renaming, sharing, and
