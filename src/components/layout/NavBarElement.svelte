@@ -16,13 +16,11 @@ Copyright (C) 2026 Andrew Cupps
 	<a
 		href={link}
 		{target}
-		class="text-nowrap transition"
-		class:siteLinkUnderline={isOnPage}
-		class:text-orange={isOnPage}
-		class:hover:text-orange={!isOnPage}
-		class:dark:hover:text-lightOrange={!isOnPage}
-		class:text-textLight={!isOnPage}
-		class:dark:text-white={!isOnPage}
+		class={`text-nowrap transition ${
+			isOnPage
+				? 'siteLinkUnderline text-textLight dark:text-orange'
+				: 'text-textLight hover:text-black dark:text-textDark dark:hover:text-orange'
+		}`}
 	>
 		{text}
 	</a>
