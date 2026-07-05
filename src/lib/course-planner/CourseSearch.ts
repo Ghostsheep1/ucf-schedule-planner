@@ -112,20 +112,28 @@ CourseSearchFilterStore.subscribe((newFilters) => {
  * @param input
  */
 function resolveInputToDepartment(input: string): string[] {
-	if (!deptCodes || input.length < 1) {
+	if (input.length < 1) {
 		return [];
 	}
 
 	const exactCourseMatch = input.match(/^([A-Z]{2,4})\d/);
 	if (exactCourseMatch) {
-		const matchingPrefix = [...deptCodes]
-			.filter((dept) => input.startsWith(dept))
-			.sort((a, b) => b.length - a.length)[0];
-		return matchingPrefix ? [matchingPrefix] : [];
+		return [exactCourseMatch[1]];
+	}
+
+	if (!deptCodes || deptCodes.length === 0) {
+		const fallbackPrefix = input.match(/^[A-Z]{2,4}/)?.[0] ?? '';
+		return fallbackPrefix ? [fallbackPrefix] : [];
 	}
 
 	const deptInput = input.match(/^[A-Z]+/)?.[0] ?? input;
-	return deptCodes.filter((dept) => dept.startsWith(deptInput));
+	const deptMatches = deptCodes.filter((dept) => dept.startsWith(deptInput));
+	if (deptMatches.length > 0) {
+		return deptMatches;
+	}
+
+	const fallbackPrefix = deptInput.slice(0, 4);
+	return fallbackPrefix.length >= 2 ? [fallbackPrefix] : [];
 }
 
 function filterAndSortCourseArray(courses: Course[]): Course[] {
