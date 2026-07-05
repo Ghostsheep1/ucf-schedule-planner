@@ -9,10 +9,12 @@ Copyright (C) 2026 Andrew Cupps
 	import Analytics from '../components/layout/Analytics.svelte';
 	import AppUpdateReloader from '../components/layout/AppUpdateReloader.svelte';
 	import SiteLinks from '../components/layout/SiteLinks.svelte';
+	import StartupIndexCheck from '../components/layout/StartupIndexCheck.svelte';
 </script>
 
 <Analytics />
 <AppUpdateReloader />
+<StartupIndexCheck />
 
 <div class="fixed z-[50] w-full px-4">
 	<div
