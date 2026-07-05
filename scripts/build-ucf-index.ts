@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
 	fetchUcfCatalogCourses,
@@ -52,12 +52,31 @@ const includeCatalogDetails = process.env.UCF_INDEX_INCLUDE_DETAILS !== '0';
 const includeSeatDetails = process.env.UCF_INDEX_INCLUDE_SEATS !== '0';
 const includeRmpRatings = process.env.UCF_INDEX_INCLUDE_RMP !== '0';
 const rmpConcurrency = Math.max(1, Number(process.env.UCF_INDEX_RMP_CONCURRENCY ?? '3'));
+const rmpDelayMs = Math.max(0, Number(process.env.UCF_INDEX_RMP_DELAY_MS ?? '800'));
+const rmpRetryCount = Math.max(0, Number(process.env.UCF_INDEX_RMP_RETRIES ?? '4'));
+const rmpOnly = process.env.UCF_INDEX_RMP_ONLY === '1';
 const RMP_UCF_SCHOOL_ID = 'U2Nob29sLTEwODI=';
 const RMP_GRAPHQL_URL = 'https://www.ratemyprofessors.com/graphql';
 
 async function main() {
 	const started = Date.now();
 	console.log(`Building UCF section index for ${term}...`);
+
+	if (rmpOnly) {
+		const existing = JSON.parse(await readFile(outputPath, 'utf8')) as UcfSectionIndex;
+		const instructors = await buildInstructorRatings(existing.courses);
+		const courses = applyInstructorRatings(existing.courses, instructors);
+		await writeIndex({
+			...existing,
+			generatedAt: new Date().toISOString(),
+			instructors,
+			courses,
+			sourceStatus: `Refreshed ${instructors.length} RMP instructor ratings in ${Math.round(
+				(Date.now() - started) / 1000
+			)}s.`
+		});
+		return;
+	}
 
 	const [departments, catalogCourses] = await Promise.all([
 		fetchUcfSubjects(),
@@ -100,20 +119,7 @@ async function main() {
 	indexedCourses = indexedCourses.filter((course) => course.sections.length > 0);
 
 	const instructors = includeRmpRatings ? await buildInstructorRatings(indexedCourses) : [];
-	const instructorLookup = new Map(instructors.map((instructor) => [normalizeInstructor(instructor.name), instructor]));
-	indexedCourses = indexedCourses.map((course) => ({
-		...course,
-		sections: course.sections.map((section) => {
-			const instructor = instructorLookup.get(normalizeInstructor(section.professorName));
-			if (!instructor?.average_rating) return section;
-			return {
-				...section,
-				professorRating: Number(instructor.average_rating),
-				professorRatingCount: instructor.rating_count ?? undefined,
-				professorRatingUrl: `https://www.ratemyprofessors.com/professor/${instructor.slug}`
-			};
-		})
-	}));
+	indexedCourses = applyInstructorRatings(indexedCourses, instructors);
 
 	const index: UcfSectionIndex = {
 		version: 1,
@@ -130,9 +136,33 @@ async function main() {
 		)}s.`
 	};
 
+	await writeIndex(index);
+}
+
+async function writeIndex(index: UcfSectionIndex) {
 	await mkdir(path.dirname(outputPath), { recursive: true });
 	await writeFile(outputPath, `${JSON.stringify(index, null, 2)}\n`);
 	console.log(`Wrote ${index.courses.length} section-bearing courses to ${outputPath}.`);
+}
+
+function applyInstructorRatings(courses: Course[], instructors: IndexedInstructor[]) {
+	const instructorLookup = new Map(instructors.map((instructor) => [normalizeInstructor(instructor.name), instructor]));
+	return courses.map((course) => ({
+		...course,
+		sections: course.sections.map((section) => {
+			const instructor = instructorLookup.get(normalizeInstructor(section.professorName));
+			if (!instructor?.average_rating) {
+				const { professorRating, professorRatingCount, professorRatingUrl, ...withoutRating } = section;
+				return withoutRating;
+			}
+			return {
+				...section,
+				professorRating: Number(instructor.average_rating),
+				professorRatingCount: instructor.rating_count ?? undefined,
+				professorRatingUrl: `https://www.ratemyprofessors.com/professor/${instructor.slug}`
+			};
+		})
+	}));
 }
 
 async function buildInstructorRatings(courses: Course[]): Promise<IndexedInstructor[]> {
@@ -187,15 +217,19 @@ async function fetchRmpRating(name: string): Promise<IndexedInstructor> {
 }
 
 async function searchRmpProfessor(name: string): Promise<RmpTeacher[]> {
-	const response = await fetch(RMP_GRAPHQL_URL, {
-		method: 'POST',
-		headers: {
-			'content-type': 'application/json',
-			authorization: 'Basic dGVzdDp0ZXN0',
-			'user-agent': 'Mozilla/5.0 KnightPlanner/1.0'
-		},
-		body: JSON.stringify({
-			query: `query TeacherSearchResultsPageQuery($query: TeacherSearchQuery!, $schoolID: ID, $includeSchoolFilter: Boolean!) {
+	for (let attempt = 0; attempt <= rmpRetryCount; attempt += 1) {
+		if (attempt > 0 || rmpDelayMs > 0) {
+			await delay(rmpDelayMs * Math.max(1, attempt));
+		}
+		const response = await fetch(RMP_GRAPHQL_URL, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: 'Basic dGVzdDp0ZXN0',
+				'user-agent': 'Mozilla/5.0 KnightPlanner/1.0'
+			},
+			body: JSON.stringify({
+				query: `query TeacherSearchResultsPageQuery($query: TeacherSearchQuery!, $schoolID: ID, $includeSchoolFilter: Boolean!) {
 				search: newSearch {
 					teachers(query: $query, first: 8, after: "") {
 						edges {
@@ -222,27 +256,34 @@ async function searchRmpProfessor(name: string): Promise<RmpTeacher[]> {
 					id
 				}
 			}`,
-			variables: {
-				query: {
-					text: name,
+				variables: {
+					query: {
+						text: name,
+						schoolID: RMP_UCF_SCHOOL_ID,
+						fallback: true,
+						departmentID: null
+					},
 					schoolID: RMP_UCF_SCHOOL_ID,
-					fallback: true,
-					departmentID: null
-				},
-				schoolID: RMP_UCF_SCHOOL_ID,
-				includeSchoolFilter: true
-			}
-		})
-	});
-	if (!response.ok) throw new Error(`RMP ${response.status}`);
-	const payload = (await response.json()) as {
-		data?: { search?: { teachers?: { edges?: RmpTeacher[] } } };
-		errors?: { message?: string }[];
-	};
-	if (payload.errors?.length) {
-		throw new Error(payload.errors.map((error) => error.message).filter(Boolean).join('; '));
+					includeSchoolFilter: true
+				}
+			})
+		});
+		if (response.status === 429 && attempt < rmpRetryCount) continue;
+		if (!response.ok) throw new Error(`RMP ${response.status}`);
+		const payload = (await response.json()) as {
+			data?: { search?: { teachers?: { edges?: RmpTeacher[] } } };
+			errors?: { message?: string }[];
+		};
+		if (payload.errors?.length) {
+			throw new Error(payload.errors.map((error) => error.message).filter(Boolean).join('; '));
+		}
+		return payload.data?.search?.teachers?.edges ?? [];
 	}
-	return payload.data?.search?.teachers?.edges ?? [];
+	return [];
+}
+
+function delay(ms: number) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeInstructor(name: string) {

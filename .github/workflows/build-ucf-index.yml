@@ -27,7 +27,9 @@ jobs:
           UCF_INDEX_CONCURRENCY: 3
           UCF_INDEX_INCLUDE_SEATS: 1
           UCF_INDEX_INCLUDE_RMP: 1
-          UCF_INDEX_RMP_CONCURRENCY: 3
+          UCF_INDEX_RMP_CONCURRENCY: 1
+          UCF_INDEX_RMP_DELAY_MS: 1200
+          UCF_INDEX_RMP_RETRIES: 6
 
       - name: Commit index update
         run: |
