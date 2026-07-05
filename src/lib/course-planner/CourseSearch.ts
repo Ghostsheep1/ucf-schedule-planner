@@ -25,9 +25,10 @@ import {
 import type { FilterParams } from '../../types';
 
 const cache = new CourseDataCache();
+let mostRecentInput: string = '';
 
 // Load department list data
-let deptCodes: string[];
+let deptCodes: string[] = [];
 export let deptCodeToName: Record<string, string> = {};
 DepartmentsStore.subscribe((depts) => {
 	deptCodes = depts.map((dept) => dept.deptCode);
@@ -35,6 +36,9 @@ DepartmentsStore.subscribe((depts) => {
 	depts.forEach((dept) => {
 		deptCodeToName[dept.deptCode] = dept.name;
 	});
+	if (mostRecentInput.length > 0) {
+		setSearchResults(mostRecentInput);
+	}
 });
 
 // Load professor name data
@@ -56,8 +60,6 @@ ProfsLookupStore.subscribe((profs) => {
 	});
 	profNamesReverse.sort();
 });
-
-let mostRecentInput: string = '';
 
 /**
  * Parses a raw search input for an @-prefix professor token, returning the
@@ -114,15 +116,16 @@ function resolveInputToDepartment(input: string): string[] {
 		return [];
 	}
 
-	// You may think that if the input length is 4 or longer, we should just
-	// use that as the input to get from the cache. But consider that we need
-	// to check that the input is a valid department code, which is an O(n)
-	// operation anyway. So there's no point in adding additional logic for the
-	// case where the input length is a full department code.
-	const deptInput = input.length > 4 ? input.substring(0, 4) : input;
-	const possibleDepts: string[] = deptCodes.filter((dept) => dept.startsWith(deptInput));
+	const exactCourseMatch = input.match(/^([A-Z]{2,4})\d/);
+	if (exactCourseMatch) {
+		const matchingPrefix = [...deptCodes]
+			.filter((dept) => input.startsWith(dept))
+			.sort((a, b) => b.length - a.length)[0];
+		return matchingPrefix ? [matchingPrefix] : [];
+	}
 
-	return possibleDepts;
+	const deptInput = input.match(/^[A-Z]+/)?.[0] ?? input;
+	return deptCodes.filter((dept) => dept.startsWith(deptInput));
 }
 
 function filterAndSortCourseArray(courses: Course[]): Course[] {
@@ -258,9 +261,10 @@ export async function setSearchResults(input: string) {
 		}
 
 		// Otherwise, filter by course number
-		const inputCode = simpleInput.substring(4);
+		const deptLength = matchingDepts[0].length;
+		const inputCode = simpleInput.substring(deptLength);
 		const matchingCourses = deptCourses.filter((course) => {
-			return course.courseCode.startsWith(inputCode, 4);
+			return course.courseCode.startsWith(inputCode, deptLength);
 		});
 		SearchResultsStore.set(matchingCourses);
 		return;
