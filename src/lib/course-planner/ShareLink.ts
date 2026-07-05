@@ -16,7 +16,7 @@ import type { Course } from '@jupiterp/jupiterp';
 import type { CourseSectionPair, ScheduleBlock, ScheduleSelection } from '../../types';
 import { noDifferences } from './Schedule';
 
-/** Query parameter that carries a shared schedule, e.g. `?s=2~CMSC4Aq8z`. */
+/** Query parameter that carries a shared schedule, e.g. `?s=2~COP4Aq8z`. */
 export const SHARE_PARAM = 's';
 
 /**
@@ -24,7 +24,7 @@ export const SHARE_PARAM = 's';
  * every version listed below, so links shared under an older format keep
  * working after a bump.
  *
- * - `1` — readable literal pairs: `1~CMSC131-0101.MATH140-0501`
+ * - `1` — readable literal pairs: `1~COP3502C-0001.MAC2311C-0002`
  * - `2` — dept letters + a base62-packed number/section token (this version)
  */
 const SCHEMA_VERSION = '2';
@@ -112,7 +112,7 @@ function encodeSegment(courseCode: string, sectionCode: string): string {
  * characters, so it never needs percent-encoding.
  *
  * @param selections The schedule blocks to encode.
- * @returns A token like `2~CMSC4Aq8z.MATH...`, or `''` if there are no course
+ * @returns A token like `2~COP4Aq8z.MAC...`, or `''` if there are no course
  *          sections to share.
  */
 export function encodeSchedule(selections: ScheduleBlock[]): string {

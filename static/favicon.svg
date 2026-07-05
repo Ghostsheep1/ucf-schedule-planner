@@ -1,6 +1,19 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="64" height="64" rx="12" fill="#050505"/>
-  <path d="M32 6L53 14V30C53 43 45 54 32 60C19 54 11 43 11 30V14L32 6Z" fill="#050505" stroke="#FFC904" stroke-width="4"/>
-  <path d="M32 15L43 20V31C43 39 39 45 32 49C25 45 21 39 21 31V20L32 15Z" fill="#FFC904"/>
-  <path d="M30 20H35V29L43 21H49L40 30L50 45H44L36 33L35 34V45H30V20Z" fill="#050505"/>
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Knight Planner">
+  <defs>
+    <linearGradient id="gold" x1="11" y1="7" x2="55" y2="57" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF2A6"/>
+      <stop offset="0.42" stop-color="#FFC904"/>
+      <stop offset="1" stop-color="#B88900"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="15" y1="8" x2="50" y2="54" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#141821"/>
+      <stop offset="1" stop-color="#050505"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#111620"/>
+  <path d="M32 6L56 14.5V31.5C56 44 46.8 53.5 32 59C17.2 53.5 8 44 8 31.5V14.5L32 6Z" fill="url(#ink)" stroke="url(#gold)" stroke-width="4"/>
+  <path d="M32 15L45 20V32C45 39 40.6 44.6 32 49C23.4 44.6 19 39 19 32V20L32 15Z" fill="#FFC904"/>
+  <path d="M29.5 18H34V29L43.3 19H49L39.2 29.5L49 46H43L35.7 33.4L34 35.2V46H29.5V18Z" fill="#050505"/>
+  <path d="M17.5 22L27.3 15.5V22.7L22.4 26.1V36.9L17.5 33.6V22Z" fill="#050505"/>
+  <path d="M46 19.7L54 16.6L58 20.2L51.6 26L46 23.8V19.7Z" fill="#FFC904"/>
 </svg>

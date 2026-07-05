@@ -5,7 +5,7 @@ https://github.com/atcupps/Jupiterp/LICENSE).
 Copyright (C) 2026 Andrew Cupps
 -->
 <script lang="ts">
-	import { GenEd } from '@jupiterp/jupiterp';
+	import type { GenEd } from '@jupiterp/jupiterp';
 	import {
 		AdjustmentsHorizontalOutline,
 		AngleDownOutline,
@@ -14,6 +14,7 @@ Copyright (C) 2026 Andrew Cupps
 	import { slide } from 'svelte/transition';
 	import type { FilterParams } from '../../../types';
 	import { CourseSearchFilterStore } from '../../../stores/CoursePlannerStores';
+	import { UCF_GEN_EDS } from '$lib/ucf/genEds';
 
 	let appliedFiltersCount = 0;
 	let showFiltersMenu = false;
@@ -108,14 +109,14 @@ Copyright (C) 2026 Andrew Cupps
 	<!-- Filters menu -->
 	{#if showFiltersMenu}
 		<div class="mx-1 my-1 flex flex-col gap-2 px-2 py-1 text-xs" transition:slide>
-			<!-- Gen-Eds -->
+			<!-- UCF GEPs -->
 			<div class="flex flex-row text-xs">
-				<span class="min-w-16 whitespace-nowrap"> Gen-Eds: </span>
+				<span class="min-w-16 whitespace-nowrap"> GEPs: </span>
 
 				<div class="flex grow flex-col">
-					<!-- Gen-Ed buttons -->
+					<!-- GEP buttons -->
 					<div class="flex w-full flex-row items-center">
-						<!-- Show/hide gen-eds menu button -->
+						<!-- Show/hide GEP menu button -->
 						<!-- format-check exempt 21 10 -->
 						<button
 							class="border-1 flex h-full grow
@@ -124,7 +125,7 @@ Copyright (C) 2026 Andrew Cupps
                                     border-t border-secCodesLight text-left hover:bg-hoverLight
                                     focus-visible:ring dark:border-divBorderDark
                                     dark:hover:bg-divBorderDark"
-							title="Show/hide Gen Ed selection menu"
+							title="Show/hide UCF GEP selection menu"
 							on:click={() => {
 								showGenEdMenu = !showGenEdMenu;
 							}}
@@ -138,7 +139,7 @@ Copyright (C) 2026 Andrew Cupps
 							</span>
 							<span class="w-full bg-bgLight px-1 dark:bg-bgDark">
 								{#if Array.from(genEdSelections).length === 0}
-									Select Gen Eds
+									Select GEPs
 								{:else}
 									{Array.from(genEdSelections)
 										.map((g) => g.code)
@@ -147,7 +148,7 @@ Copyright (C) 2026 Andrew Cupps
 							</span>
 						</button>
 
-						<!-- Clear gen-ed filters -->
+						<!-- Clear GEP filters -->
 						<button
 							class="border-1 h-full self-end
                                     rounded-r-md border border-secCodesDark
@@ -155,7 +156,7 @@ Copyright (C) 2026 Andrew Cupps
                                     hover:bg-hoverLight
                                     dark:border-divBorderDark
                                     hover:dark:bg-hoverDark"
-							title="Clear Gen Ed filters"
+							title="Clear GEP filters"
 							on:click={() => {
 								genEdSelections = [];
 							}}
@@ -164,16 +165,16 @@ Copyright (C) 2026 Andrew Cupps
 						</button>
 					</div>
 
-					<!-- Gen Ed checkbox menu -->
+					<!-- GEP checkbox menu -->
 					{#if showGenEdMenu}
 						<div
 							class="mt-1 flex flex-col
                                     gap-2 py-2"
 							transition:slide={{ duration: 350 }}
 						>
-							<!-- Individual gen-ed checkbox -->
+							<!-- Individual GEP checkbox -->
 							<!-- format-check exempt 25 15 -->
-							{#each GenEd.list() as genEd}
+							{#each UCF_GEN_EDS as genEd}
 								<div class="flex flex-row items-center">
 									<input
 										type="checkbox"

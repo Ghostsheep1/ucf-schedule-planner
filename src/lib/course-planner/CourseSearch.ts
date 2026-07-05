@@ -215,6 +215,13 @@ export async function setSearchResults(input: string) {
 
 	// Don't care about case or whitespace in course code searches
 	const simpleInput: string = courseQuery.toUpperCase().replace(/\s/g, '');
+	const fullCourseCodeInput = /^[A-Z]{2,4}[0-9]{4}[A-Z]{0,2}$/.test(simpleInput);
+
+	if (professorQuery && simpleInput.length === 0 && professorQuery.trim().length < 3) {
+		DeptSuggestionsStore.set([]);
+		SearchResultsStore.set([]);
+		return;
+	}
 
 	// If the search input matches a department code, get the courses for that
 	// department and then filter by course number.
@@ -228,8 +235,8 @@ export async function setSearchResults(input: string) {
 
 		// Generate cache request input
 		const requestInput: RequestInput = {
-			type: 'deptCode',
-			value: matchingDepts[0],
+			type: fullCourseCodeInput ? 'courseCode' : 'deptCode',
+			value: fullCourseCodeInput ? simpleInput : matchingDepts[0],
 			filters: serverSideFilters
 		};
 

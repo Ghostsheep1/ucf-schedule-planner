@@ -12,7 +12,7 @@ Copyright (C) 2026 Andrew Cupps
 	} from '../../../lib/course-planner/Schedule';
 	import ScheduleDay from './ScheduleDay.svelte';
 	import ScheduleBackground from './ScheduleBackground.svelte';
-	import { formatCredits, testudoLink } from '../../../lib/course-planner/Formatting';
+	import { formatCredits, myUcfClassSearchLink } from '../../../lib/course-planner/Formatting';
 	import InstructorListing from '../course-search/InstructorListing.svelte';
 	import {
 		HoveredSectionStore,
@@ -240,7 +240,7 @@ Copyright (C) 2026 Andrew Cupps
 					- {courseInfoCourse.name}
 				</span>
 				<span class="mx-1 text-base font-normal text-orange underline 2xl:text-lg">
-					<a href={testudoLink(courseInfoCourse.courseCode)} target="_blank"> (view on myUCF) </a>
+					<a href={myUcfClassSearchLink(courseInfoCourse.courseCode)} target="_blank"> (view on myUCF) </a>
 				</span>
 			</div>
 
@@ -250,7 +250,7 @@ Copyright (C) 2026 Andrew Cupps
 
 			{#if courseInfoCourse.genEds != null && courseInfoCourse.genEds.length > 0}
 				<div class="text-sm 2xl:text-base">
-					<span class="font-black underline"> GenEds: </span>
+					<span class="font-black underline"> GEPs: </span>
 					{courseInfoCourse.genEds.map((g) => g.code).join(', ')}
 				</div>
 			{/if}

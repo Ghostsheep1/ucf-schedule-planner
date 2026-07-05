@@ -35,7 +35,7 @@ Copyright (C) 2026 Andrew Cupps
 	export let inputClass =
 		'w-full rounded-lg border-2 border-solid border-outlineLight bg-transparent px-2 py-1 ' +
 		'text-base placeholder:text-sm focus:outline-none dark:border-outlineDark';
-	export let placeholder = "Search courses (e.g. 'MATH140') or @professor";
+	export let placeholder = "Search courses (e.g. 'COP3502C') or @professor";
 	/** Bound back to the parent so it can manage focus (mobile activation). */
 	export let inputElement: HTMLInputElement | null = null;
 	/** Focus/blur handlers for the planner's mobile keyboard activation. */

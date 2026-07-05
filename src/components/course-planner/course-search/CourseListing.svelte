@@ -6,7 +6,7 @@ Copyright (C) 2026 Andrew Cupps
 -->
 <script lang="ts">
 	import SectionListing from './SectionListing.svelte';
-	import { formatCredits, testudoLink } from '../../../lib/course-planner/Formatting';
+	import { formatCredits, myUcfClassSearchLink } from '../../../lib/course-planner/Formatting';
 	import { slide } from 'svelte/transition';
 	import CourseCondition from './CourseCondition.svelte';
 	import { AngleRightOutline } from 'flowbite-svelte-icons';
@@ -69,7 +69,7 @@ Copyright (C) 2026 Andrew Cupps
                             px-1 text-[0.625rem] font-bold leading-tight text-orange transition
                             hover:bg-orange hover:text-bgSecondaryLight
                             2xl:text-xs hover:dark:text-bgSecondaryDark"
-						href={`https://app.testudo.umd.edu/soc/gen-ed/202608/` + genEd.code}
+						href="https://www.ucf.edu/catalog/undergraduate/#/policy/SJ3U0aO5d"
 						target="_blank"
 						title={'GenEd: ' + genEd.name}
 					>
@@ -101,7 +101,7 @@ Copyright (C) 2026 Andrew Cupps
 				transition:slide
 			>
 				<div class="pb-1">
-					<a href={testudoLink(course.courseCode)} class="text-orange underline" target="_blank">
+					<a href={myUcfClassSearchLink(course.courseCode)} class="text-orange underline" target="_blank">
 						View on myUCF
 					</a>
 				</div>

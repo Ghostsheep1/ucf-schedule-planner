@@ -1,5 +1,5 @@
 /**
- * UCF-backed client that preserves the Jupiterp UI/data contract.
+ * UCF-backed client that adapts live UCF data to the planner UI contract.
  */
 import {
 	ApiResponse,
@@ -37,6 +37,7 @@ import {
 const DEFAULT_TERM = 'Fall 2026';
 const COURSE_CACHE_MS = 10 * 60 * 1000;
 const DEPT_CACHE_MS = 60 * 60 * 1000;
+const CATALOG_CACHE_MS = 60 * 60 * 1000;
 
 type CacheEntry<T> = {
 	expires: number;
@@ -79,15 +80,17 @@ function courseToBasic(course: UcfCourse): CourseBasic {
 	};
 }
 
-function courseToJupiterp(course: UcfCourse): Course {
+function courseToPlannerCourse(course: UcfCourse): Course {
 	return {
 		...courseToBasic(course),
-		sections: course.sections.length ? course.sections.map((section) => sectionToJupiterp(course, section)) : null
+		sections: course.sections.length
+			? course.sections.map((section) => sectionToPlannerSection(course, section))
+			: null
 	};
 }
 
-function sectionToJupiterp(course: UcfCourse, section: UcfSection): Section {
-	const meetings = section.meetings.map(meetingToJupiterp);
+function sectionToPlannerSection(course: UcfCourse, section: UcfSection): Section {
+	const meetings = section.meetings.map(meetingToPlannerMeeting);
 	return {
 		courseCode: normalizeCourseCode(course.code),
 		sectionCode: section.sectionNumber,
@@ -100,7 +103,7 @@ function sectionToJupiterp(course: UcfCourse, section: UcfSection): Section {
 	};
 }
 
-function meetingToJupiterp(meeting: UcfMeeting): Section['meetings'][number] {
+function meetingToPlannerMeeting(meeting: UcfMeeting): Section['meetings'][number] {
 	if (meeting.dayOfWeek === 'Online') {
 		return 'OnlineAsync';
 	}
@@ -176,38 +179,50 @@ function filterCourses(courses: Course[], cfg: CoursesWithSectionsConfig | Cours
 async function coursesWithSectionsData(cfg: CoursesWithSectionsConfig): Promise<Course[]> {
 	const limit = cfg.limit ?? 80;
 	if (cfg.instructor) {
-		const courses = await fetchUcfProfessorCourses(cfg.instructor, DEFAULT_TERM, limit);
-		return filterCourses(courses.map(courseToJupiterp), cfg);
+		const instructor = cfg.instructor.trim();
+		const courses = await cached(`professor:${DEFAULT_TERM}:${instructor}:${limit}`, COURSE_CACHE_MS, () =>
+			fetchUcfProfessorCourses(instructor, DEFAULT_TERM, limit)
+		);
+		return filterCourses(courses.map(courseToPlannerCourse), cfg);
 	}
 
 	let catalogCourses: UcfCourse[] = [];
+	const shouldLoadSections = cfg.courseCodes != null && cfg.courseCodes.size > 0;
 	if (cfg.courseCodes && cfg.courseCodes.size > 0) {
 		catalogCourses = (
 			await Promise.all(
 				[...cfg.courseCodes].map((code) =>
-					searchUcfCatalog(normalizeCourseCode(code), 1, { includeDetails: true })
+					cached(`catalog:exact:${normalizeCourseCode(code)}`, CATALOG_CACHE_MS, () =>
+						searchUcfCatalog(normalizeCourseCode(code), 1, { includeDetails: true })
+					)
 				)
 			)
 		).flat();
 	} else if (cfg.prefix !== undefined) {
-		catalogCourses = await searchUcfCatalog(cfg.prefix, limit, { includeDetails: true });
+		catalogCourses = await cached(`catalog:prefix:${cfg.prefix}:${limit}`, CATALOG_CACHE_MS, () =>
+			searchUcfCatalog(cfg.prefix ?? '', limit, { includeDetails: false })
+		);
 	} else if (cfg.number !== undefined) {
-		catalogCourses = await searchUcfCatalog(cfg.number, limit, { includeDetails: true });
+		catalogCourses = await cached(`catalog:number:${cfg.number}:${limit}`, CATALOG_CACHE_MS, () =>
+			searchUcfCatalog(cfg.number ?? '', limit, { includeDetails: false })
+		);
 	}
 
-	const withSections = await Promise.all(
-		catalogCourses.map(async (course) => ({
-			...course,
-			scheduleUrl: UCF_CLASS_SEARCH_URL,
-			sections: await cached(
-				`sections:${DEFAULT_TERM}:${normalizeCourseCode(course.code)}`,
-				COURSE_CACHE_MS,
-				() => fetchUcfClassSections(course.code, DEFAULT_TERM, { includeSeatDetails: true })
+	const withSections = shouldLoadSections
+		? await Promise.all(
+				catalogCourses.map(async (course) => ({
+					...course,
+					scheduleUrl: UCF_CLASS_SEARCH_URL,
+					sections: await cached(
+						`sections:${DEFAULT_TERM}:${normalizeCourseCode(course.code)}`,
+						COURSE_CACHE_MS,
+						() => fetchUcfClassSections(course.code, DEFAULT_TERM, { includeSeatDetails: false })
+					)
+				}))
 			)
-		}))
-	);
+		: catalogCourses;
 
-	return filterCourses(withSections.map(courseToJupiterp), cfg);
+	return filterCourses(withSections.map(courseToPlannerCourse), cfg);
 }
 
 export const client = {

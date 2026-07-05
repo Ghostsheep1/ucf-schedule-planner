@@ -92,14 +92,14 @@ export function formatInstructors(instructors: string[]): string {
  * Generates a link to the UCF class search page for a given course code
  * @param courseCode The course code for which to generate a link
  */
-export function testudoLink(courseCode: string): string {
+export function myUcfClassSearchLink(courseCode: string): string {
 	return `https://my.ucf.edu/class-search/?search=${courseCode}`;
 }
 
 /**
  * Splits a `code` into its four letter department code and three numbers
  * as a single string, space delimited.
- * Example: `splitCourseCode('CMSC424') --> 'CMSC 424'
+ * Example: `splitCourseCode('COP3502C') --> 'COP 3502C'
  * @param code A `string` code to split apart
  * @returns `code` split into
  */

@@ -13,9 +13,8 @@
 		RateMyProfessors ratings when available, and help students compare schedules visually.
 	</p>
 	<p class={pClasses}>
-		This project is a UCF adaptation of Jupiterp's open-source planner experience. It was built by
-		Henrique Silva Ribeiro and is currently version 1.0.0 while the UCF release is still being
-		polished.
+		The app was built by Henrique Silva Ribeiro and is currently version 1.0.0 while the UCF release
+		is still being polished.
 	</p>
 	<a href="/changelog" class="text-orange underline">View changelog</a>
 	<h2 class={h2Classes}>Professor Ratings</h2>

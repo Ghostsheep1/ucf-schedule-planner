@@ -235,7 +235,7 @@ Copyright (C) 2026 Andrew Cupps
 					{#if instructorsChange}
 						<Tooltip
 							text={'⚠ ' + formattedInstructors}
-							tooltipText="Instructors have changed since you last visited Jupiterp."
+							tooltipText="Instructors have changed since you last visited Knight Planner."
 						/>
 					{:else}
 						{formattedInstructors}
@@ -251,12 +251,12 @@ Copyright (C) 2026 Andrew Cupps
 					{#if meetingTimeChange}
 						<Tooltip
 							text={'⚠ ' + formattedTime}
-							tooltipText="Class meeting time has changed since you last visited Jupiterp."
+							tooltipText="Class meeting time has changed since you last visited Knight Planner."
 						/>
 					{:else if meetingsTypeChange}
 						<Tooltip
 							text={'⚠ ' + formattedTime}
-							tooltipText="Meeting type has changed since you last visited Jupiterp."
+							tooltipText="Meeting type has changed since you last visited Knight Planner."
 						/>
 					{:else}
 						{formattedTime}
@@ -277,7 +277,7 @@ Copyright (C) 2026 Andrew Cupps
 					{#if meetingLocChange}
 						<Tooltip
 							text={'⚠ ' + location}
-							tooltipText="Class location has changed since you last visited Jupiterp."
+							tooltipText="Class location has changed since you last visited Knight Planner."
 						/>
 					{:else}
 						{location}

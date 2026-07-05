@@ -16,8 +16,8 @@ Copyright (C) 2026 Andrew Cupps
 	<div
 		class="flex h-12 flex-row justify-start border-b-2 border-divBorderLight dark:border-divBorderDark"
 	>
-		<a href="/" class="flex py-1">
-			<img src="logo.svg" alt="Knight Planner logo" />
+		<a href="/" class="flex shrink-0 py-1">
+			<img src="logo.svg" alt="Knight Planner logo" class="h-10 w-auto" />
 		</a>
 		<SiteLinks />
 	</div>

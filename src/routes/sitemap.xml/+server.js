@@ -4,7 +4,7 @@
  * https://github.com/atcupps/Jupiterp/LICENSE).
  * Copyright (C) 2026 Andrew Cupps
  *
- * @fileoverview This file is the endpoint for Jupiterp's sitemap.xml file.
+ * @fileoverview Sitemap endpoint.
  */
 
 export async function GET() {
@@ -22,7 +22,7 @@ export async function GET() {
                         ${pages
 													.map((page) => {
 														return `<url>
-                            <loc>https://www.jupiterp.com${page.url}</loc>
+                            <loc>https://ucf-schedule-planner.vercel.app${page.url}</loc>
                             <changefreq>${page.changefreq}</changefreq>
                             <priority>${page.priority}</priority>
                         </url>`;

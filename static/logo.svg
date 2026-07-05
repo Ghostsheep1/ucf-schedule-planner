@@ -1,7 +1,22 @@
-<svg width="260" height="64" viewBox="0 0 260 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M32 5L53 13V29C53 42 45 53 32 59C19 53 11 42 11 29V13L32 5Z" fill="#050505" stroke="#FFC904" stroke-width="4"/>
-  <path d="M32 14L42 18V30C42 37 38 43 32 47C26 43 22 37 22 30V18L32 14Z" fill="#FFC904"/>
-  <path d="M31 19H35V28L43 20H48L39 29L49 44H44L36 32L35 33V44H31V19Z" fill="#050505"/>
-  <path d="M16 29L29 19V25L20 32L16 29Z" fill="#050505"/>
-  <text x="69" y="41" fill="#F7F7F7" font-family="Cabin, Arial, sans-serif" font-size="28" font-weight="700">Knight Planner</text>
+<svg width="332" height="48" viewBox="0 0 332 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Knight Planner">
+  <defs>
+    <linearGradient id="gold" x1="8" y1="5" x2="43" y2="43" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF2A6"/>
+      <stop offset="0.38" stop-color="#FFC904"/>
+      <stop offset="1" stop-color="#B88900"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="12" y1="7" x2="39" y2="40" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#141821"/>
+      <stop offset="1" stop-color="#050505"/>
+    </linearGradient>
+  </defs>
+  <path d="M24 3.5L43.5 10.4V24.2C43.5 34.8 36 42.3 24 46C12 42.3 4.5 34.8 4.5 24.2V10.4L24 3.5Z" fill="url(#ink)" stroke="url(#gold)" stroke-width="3"/>
+  <path d="M24 9.5L36.5 14V25.1C36.5 31.2 32.2 36.1 24 39.4C15.8 36.1 11.5 31.2 11.5 25.1V14L24 9.5Z" fill="#07080B" stroke="#FFC904" stroke-width="1.5"/>
+  <path d="M17 20.4L24 15.5L31 20.4V28.4L24 33.6L17 28.4V20.4Z" fill="#FFC904"/>
+  <path d="M22.1 16.7H25.1V23.1L31 17.3H34.6L28.1 23.7L34.6 33.4H30.8L25.7 25.7L25.1 26.3V33.4H22.1V16.7Z" fill="#050505"/>
+  <path d="M15.1 20.8L21.5 16.4V21L17.7 23.6V29.7L15.1 27.8V20.8Z" fill="#050505"/>
+  <path d="M43.8 11.4L48.7 9.6L51.2 11.9L47.3 15.4L43.8 14.1V11.4Z" fill="#FFC904"/>
+  <path d="M47.4 15.7H56.5C59.1 15.7 61.5 16.9 63.1 19L66.5 23.5L63.1 28C61.5 30.1 59.1 31.3 56.5 31.3H47.4L50.7 27.9H56.2C57.7 27.9 59.1 27.2 60 26L61.9 23.5L60 21C59.1 19.8 57.7 19.1 56.2 19.1H50.7L47.4 15.7Z" fill="#FFC904"/>
+  <circle cx="50.8" cy="23.5" r="2.2" fill="#050505"/>
+  <text x="75" y="31.8" fill="#F7F4E8" font-family="Cabin, Arial, sans-serif" font-size="25" font-weight="800" letter-spacing="0">Knight Planner</text>
 </svg>
