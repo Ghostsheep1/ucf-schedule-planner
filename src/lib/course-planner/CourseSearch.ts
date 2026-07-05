@@ -354,8 +354,8 @@ export async function setSearchResults(input: string) {
  * @returns A `Record<string, Instructor>` where instructor names as `string`s
  *              are mapped to `Instructor` objects.
  */
-export function getProfsLookup(profs: Instructor[]): Record<string, Instructor> {
-	const result: Record<string, Instructor> = {};
+export function getProfsLookup<T extends Instructor>(profs: T[]): Record<string, T> {
+	const result: Record<string, T> = {};
 	const names: Set<string> = new Set<string>();
 	for (const prof of profs) {
 		const name = prof.name;
