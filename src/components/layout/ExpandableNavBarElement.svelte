@@ -16,14 +16,14 @@ Copyright (C) 2026 Andrew Cupps
 <div class="group relative mx-4 px-1 font-normal">
 	<a href={link} {target} class="inline-flex items-center transition">
 		<span
-			class={`${isOnPage ? 'siteLinkUnderline text-orange' : 'text-textLight hover:text-orange dark:text-white dark:hover:text-lightOrange'}`}
+			class={`${isOnPage ? 'siteLinkUnderline text-textLight dark:text-orange' : 'text-textLight hover:text-black dark:text-textDark dark:hover:text-orange'}`}
 		>
 			{text}
 		</span>
 	</a>
 	<button
 		title="Show more links"
-		class="text-textLight transition hover:text-orange group-focus-within:rotate-180 group-focus-within:text-orange group-hover:rotate-180 group-hover:text-orange dark:text-textDark dark:hover:text-lightOrange group-focus-within:dark:text-lightOrange group-hover:dark:text-lightOrange"
+		class="text-textLight transition hover:text-black group-focus-within:rotate-180 group-focus-within:text-black group-hover:rotate-180 group-hover:text-black dark:text-textDark dark:hover:text-orange group-focus-within:dark:text-orange group-hover:dark:text-orange"
 	>
 		<AngleDownOutline class="ml h-3.5 w-3.5" />
 	</button>
