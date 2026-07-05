@@ -10,25 +10,13 @@ Copyright (C) 2026 Andrew Cupps
 	import { slide } from 'svelte/transition';
 	import CourseCondition from './CourseCondition.svelte';
 	import { AngleRightOutline } from 'flowbite-svelte-icons';
-	import type { Course, Section } from '@jupiterp/jupiterp';
+	import type { Course } from '@jupiterp/jupiterp';
 
 	export let course: Course;
 	export let isDesktop: boolean;
 
-	function pseudoSection(): Section {
-		return {
-			courseCode: course.courseCode,
-			sectionCode: 'N/A',
-			instructors: ['Knight Planner'],
-			meetings: ['No Sections'],
-			openSeats: 0,
-			totalSeats: 0,
-			waitlist: 0,
-			holdfile: null
-		};
-	}
-
 	let showMoreInfo: boolean = false;
+	$: hasKnownCredits = course.minCredits > 0 || course.maxCredits != null;
 
 	function scrollToCourseTop(event: FocusEvent) {
 		const button = event.currentTarget as HTMLElement | null;
@@ -50,9 +38,11 @@ Copyright (C) 2026 Andrew Cupps
 			<div class="grow text-left align-middle">
 				<b>{course.courseCode}</b>
 			</div>
-			<div class="grow text-right align-middle text-sm 2xl:text-base">
-				Credits: {formatCredits(course.minCredits, course.maxCredits)}
-			</div>
+			{#if hasKnownCredits}
+				<div class="grow text-right align-middle text-sm 2xl:text-base">
+					Credits: {formatCredits(course.minCredits, course.maxCredits)}
+				</div>
+			{/if}
 		</div>
 
 		<!-- Course title -->
@@ -123,7 +113,9 @@ Copyright (C) 2026 Andrew Cupps
 		{#each course.sections as section}
 			<SectionListing courseCode={course.courseCode} {section} {course} {isDesktop} />
 		{/each}
-	{:else}
-		<SectionListing courseCode={course.courseCode} section={pseudoSection()} {course} {isDesktop} />
+	{:else if showMoreInfo}
+		<div class="border-t-2 border-outlineLight py-3 text-sm font-medium text-secCodesLight dark:border-outlineDark dark:text-secCodesDark">
+			Search the exact course code to load live myUCF sections.
+		</div>
 	{/if}
 </div>

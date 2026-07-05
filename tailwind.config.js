@@ -12,26 +12,26 @@ export default {
 			white: '#ffffff',
 			black: '#000000',
 			orange: '#FFC904',
-			lightOrange: '#ffef9a',
+			lightOrange: '#FFE68A',
 			midGray: '#888888',
 
 			/* light mode themes */
-			bgLight: 'white',
-			bgSecondaryLight: '#EBEBEB',
-			textLight: 'black',
-			divBorderLight: '#F1F1F1',
-			outlineLight: '#A2AABD',
+			bgLight: '#F7F8FA',
+			bgSecondaryLight: '#FFFFFF',
+			textLight: '#111827',
+			divBorderLight: '#E4E8F0',
+			outlineLight: '#9AA6BA',
 			secCodesLight: '#667085',
-			hoverLight: '#d8d8d8',
+			hoverLight: '#EEF2F7',
 
 			/* dark mode themes */
-			bgDark: '#151922',
-			bgSecondaryDark: '#141721',
-			textDark: '#D9DFEA',
-			divBorderDark: '#252E3E',
-			outlineDark: '#47526A',
-			secCodesDark: '#667085',
-			hoverDark: '#30374a'
+			bgDark: '#0B0F17',
+			bgSecondaryDark: '#111827',
+			textDark: '#E8ECF4',
+			divBorderDark: '#253044',
+			outlineDark: '#536179',
+			secCodesDark: '#8A95AA',
+			hoverDark: '#1A2333'
 		},
 		extend: {
 			keyframes: {

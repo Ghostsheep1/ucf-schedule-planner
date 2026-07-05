@@ -58,18 +58,18 @@ html.minecraft * {
 
 	html.dark .custom-scrollbar {
 		scrollbar-width: thin;
-		scrollbar-color: #3f475a #151922;
+		scrollbar-color: #536179 #0b0f17;
 
 		&::-webkit-scrollbar {
 			width: 4px;
 		}
 
 		&::-webkit-scrollbar-track {
-			background: #151922;
+			background: #0b0f17;
 		}
 
 		&::-webkit-scrollbar-thumb {
-			background-color: #3f475a;
+			background-color: #536179;
 			border-radius: 8px;
 		}
 	}
