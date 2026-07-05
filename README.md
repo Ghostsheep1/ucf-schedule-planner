@@ -11,8 +11,8 @@ and generating possible schedules from course constraints.
 - Schedule Generator that builds possible schedules from selected courses, required/optional
   courses, pinned sections, pinned professors, open-section filtering, time windows, days off,
   minimum gaps, and minimum credits
-- Real UCF course catalog data, departments, Gen Ed tags, prerequisites, descriptions, credits, and
-  section listings
+- Real UCF course catalog data, departments, prerequisites, descriptions, credits, and section
+  listings
 - Real section meeting times, buildings, rooms, online/async sections, weekend meetings, seats, and
   waitlists from myUCF public class search data
 - RateMyProfessors ratings when a confident UCF professor match exists
@@ -22,7 +22,7 @@ and generating possible schedules from course constraints.
 
 ## Data Sources
 
-- UCF Kuali catalog for course, department, catalog requirement, and Gen Ed data
+- UCF Kuali catalog for course, department, catalog requirement, credit, and prerequisite data
 - myUCF public class search pages for sections, meeting times, seats, and waitlist counts
 - RateMyProfessors for professor ratings when a confident match exists
 
