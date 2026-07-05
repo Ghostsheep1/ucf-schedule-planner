@@ -5,13 +5,15 @@ https://github.com/atcupps/Jupiterp/LICENSE).
 Copyright (C) 2026 Andrew Cupps
 -->
 <script lang="ts">
-	import type { Instructor } from '@jupiterp/jupiterp';
 	import { ptLinkFromSlug } from '../../../lib/course-planner/Professors';
-	import { ProfsLookupStore } from '../../../stores/CoursePlannerStores';
+	import {
+		ProfsLookupStore,
+		type InstructorWithRatingCount
+	} from '../../../stores/CoursePlannerStores';
 
 	export let instructor: string = 'No instructor';
 
-	let profs: Record<string, Instructor>;
+	let profs: Record<string, InstructorWithRatingCount>;
 	ProfsLookupStore.subscribe((lookup) => {
 		profs = lookup;
 	});
@@ -31,7 +33,6 @@ Copyright (C) 2026 Andrew Cupps
 
 	export let profsHover: boolean;
 	export let removeHoverSection: () => void;
-
 </script>
 
 <div class="text-sm xl:text-base">
@@ -72,10 +73,17 @@ Copyright (C) 2026 Andrew Cupps
 		<span
 			style="--rating: {convertRating(profs[instructor].average_rating) + '%'}"
 			class="stars align-[2px] text-[8px] font-bold text-orange xl:text-[10px] 2xl:text-base"
-			title="{profs[instructor].average_rating} out of 5"
+			title="{profs[instructor].average_rating} out of 5{profs[instructor].rating_count
+				? ` from ${profs[instructor].rating_count} reviews`
+				: ''}"
 		>
 			★★★★★
 		</span>
+		{#if profs[instructor].rating_count}
+			<span class="text-[10px] font-bold text-orange xl:text-xs 2xl:text-base">
+				({profs[instructor].rating_count})
+			</span>
+		{/if}
 	{:else}
 		{instructor}
 	{/if}
