@@ -2,7 +2,7 @@ name: Build UCF Section Index
 
 on:
   schedule:
-    - cron: "15 8 * * *"
+    - cron: "0 4 * * *"
   workflow_dispatch:
 
 permissions:
@@ -24,7 +24,10 @@ jobs:
         run: npm run build:index
         env:
           UCF_INDEX_TERM: Fall 2026
-          UCF_INDEX_CONCURRENCY: 4
+          UCF_INDEX_CONCURRENCY: 3
+          UCF_INDEX_INCLUDE_SEATS: 1
+          UCF_INDEX_INCLUDE_RMP: 1
+          UCF_INDEX_RMP_CONCURRENCY: 3
 
       - name: Commit index update
         run: |

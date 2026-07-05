@@ -1,5 +1,4 @@
 import { json } from "@sveltejs/kit";
-import { RMP_UCF_SCHOOL_ID, fetchUcfClassSections, fetchUcfProfessorCourses, searchUcfCatalog } from "$lib/ucf/ucfSources";
 import { cached } from "$lib/server/cache";
 import { loadServerUcfSectionIndex } from "$lib/server/ucfSectionIndex";
 import { searchIndexedCourses } from "$lib/ucf/sectionIndex";
@@ -7,18 +6,6 @@ import type { Course } from "$lib/ucf/types";
 import type { RequestHandler } from "./$types";
 
 const tenMinutes = 10 * 60 * 1000;
-
-type RmpTeacher = {
-  node?: {
-    firstName?: string;
-    lastName?: string;
-  };
-};
-
-type ExpandedProfessorName = {
-  fullName: string;
-  searchHints: string[];
-};
 
 export const GET: RequestHandler = async ({ url }) => {
   const query = url.searchParams.get("q")?.trim() ?? "";
@@ -36,44 +23,24 @@ export const GET: RequestHandler = async ({ url }) => {
 
   try {
     const payload = await cached(
-      `search:${query}:${term}:${includeSections}:${includeDetails}:${requestedLimit}`,
+      `index-search:${query}:${term}:${includeSections}:${includeDetails}:${requestedLimit}`,
       tenMinutes,
       async (): Promise<{ courses: Course[]; sourceStatus: string }> => {
     const index = await loadServerUcfSectionIndex();
-    if (index?.complete && index.term === term && index.courses.length > 0 && !includeDetails) {
+    if (index?.term === term && index.courses.length > 0) {
       const indexedLimit = requestedLimit || (/^[A-Za-z]{2,5}\s*$/.test(catalogQuery || query) ? 80 : 40);
       const indexedCourses = searchIndexedCourses(index.courses, catalogQuery, indexedLimit, professorToken);
       if (indexedCourses.length > 0 || professorToken || catalogQuery) {
         return {
           courses: includeSections ? indexedCourses : indexedCourses.map((course) => ({ ...course, sections: [] })),
-          sourceStatus: `Indexed UCF sections from ${new Date(index.generatedAt).toLocaleDateString()}. Seats and waitlists refresh live.`
+          sourceStatus: `Indexed UCF sections from ${new Date(index.generatedAt).toLocaleDateString()}.`
         };
       }
     }
 
-    if (professorToken && catalogQuery.length < 2) {
-      const courses = await fetchUcfProfessorCoursesWithFallbacks(professorToken, term, requestedLimit || 40);
-      return {
-        courses,
-        sourceStatus: courses.length ? `Live myUCF sections matching @${professorToken}.` : `No live myUCF sections found for @${professorToken}.`
-      };
-    }
-
-    const catalogOnly = catalogQuery || query;
-    const limit = requestedLimit || (/^[A-Za-z]{2,5}\s*$/.test(catalogOnly) ? 80 : 20);
-    const catalogCourses = await searchUcfCatalog(catalogOnly, limit, { includeDetails: includeSections });
-    const courses = includeSections
-      ? await Promise.all(
-          catalogCourses.map(async (course) => ({
-            ...course,
-            sections: await fetchUcfClassSections(course.code, term, { includeSeatDetails: includeDetails })
-          }))
-        )
-      : catalogCourses;
-
     return {
-      courses,
-      sourceStatus: includeSections ? "Live UCF catalog and myUCF section results." : "Live UCF catalog results. Loading sections..."
+      courses: [],
+      sourceStatus: "Nightly UCF index is unavailable or has no matches."
     };
       }
     );
@@ -88,38 +55,3 @@ export const GET: RequestHandler = async ({ url }) => {
     );
   }
 };
-
-async function fetchUcfProfessorCoursesWithFallbacks(professorToken: string, term: string, limit: number) {
-  const expandedNamesPromise = expandProfessorNames(professorToken);
-  const directPromise = fetchUcfProfessorCourses(professorToken, term, limit);
-  const expandedResultsPromise = expandedNamesPromise.then((expandedNames) =>
-    Promise.all(expandedNames.map((expandedName) => fetchUcfProfessorCourses(expandedName.fullName, term, limit, expandedName.searchHints)))
-  );
-  const direct = await directPromise;
-  if (direct.length > 0) return direct;
-
-  const expandedResults = await expandedResultsPromise;
-  return expandedResults.find((courses) => courses.length > 0) ?? [];
-}
-
-async function expandProfessorNames(professorToken: string) {
-  try {
-    const rmp = await import("ratemyprofessor-api");
-    const results = (await rmp.searchProfessorsAtSchoolId(professorToken, RMP_UCF_SCHOOL_ID)) as RmpTeacher[];
-    return results
-      .map((result) => {
-        const firstName = result.node?.firstName?.trim() ?? "";
-        const lastName = result.node?.lastName?.trim() ?? "";
-        const lastWords = lastName.split(/\s+/).filter(Boolean);
-        return {
-          fullName: [firstName, lastName].filter(Boolean).join(" ").trim(),
-          searchHints: [...new Set([lastName, ...lastWords].filter(Boolean))]
-        };
-      })
-      .filter((result) => result.fullName)
-      .slice(0, 3);
-  } catch {
-    // RMP is only used as a name-expansion fallback; direct UCF results remain authoritative.
-    return [];
-  }
-}

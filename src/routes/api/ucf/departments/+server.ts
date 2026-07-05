@@ -1,5 +1,4 @@
 import { json } from "@sveltejs/kit";
-import { fetchUcfSubjects } from "$lib/ucf/ucfSources";
 import { loadServerUcfSectionIndex } from "$lib/server/ucfSectionIndex";
 import type { RequestHandler } from "./$types";
 
@@ -12,10 +11,10 @@ export const GET: RequestHandler = async () => {
         sourceStatus: `Indexed UCF catalog department list from ${new Date(index.generatedAt).toLocaleDateString()}.`
       });
     }
-    const departments = await fetchUcfSubjects();
+    const departments = index?.departments ?? [];
     return json({
       departments,
-      sourceStatus: departments.length ? "Live UCF catalog department list." : "No departments returned by UCF catalog."
+      sourceStatus: departments.length ? "Indexed UCF catalog department list." : "Nightly UCF index is unavailable."
     });
   } catch (error) {
     return json(

@@ -2,6 +2,13 @@ import type { CoursesConfig, CoursesWithSectionsConfig } from '@jupiterp/jupiter
 import type { Course } from '$lib/ucf/types';
 import type { UcfSubject } from '$lib/ucf/ucfSources';
 
+export type IndexedInstructor = {
+	name: string;
+	slug: string;
+	average_rating: string | null;
+	rating_count?: number | null;
+};
+
 export type UcfSectionIndex = {
 	version: 1;
 	generatedAt: string;
@@ -9,6 +16,7 @@ export type UcfSectionIndex = {
 	complete?: boolean;
 	courses: Course[];
 	departments: UcfSubject[];
+	instructors?: IndexedInstructor[];
 	sourceStatus?: string;
 };
 

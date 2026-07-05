@@ -1,28 +1,31 @@
 import { json } from "@sveltejs/kit";
-import { fetchUcfClassSections, likelyCourseCode } from "$lib/ucf/ucfSources";
-import { cached } from "$lib/server/cache";
+import { likelyCourseCode } from "$lib/ucf/ucfSources";
+import { loadServerUcfSectionIndex } from "$lib/server/ucfSectionIndex";
 import type { RequestHandler } from "./$types";
-
-const tenMinutes = 10 * 60 * 1000;
 
 export const GET: RequestHandler = async ({ url }) => {
   const course = likelyCourseCode(url.searchParams.get("course") ?? "");
   const term = url.searchParams.get("term") ?? "Fall 2026";
-  const details = url.searchParams.get("details") === "1";
 
   if (!course) {
     return json({ sections: [], sourceStatus: "Enter a UCF course code." }, { status: 400 });
   }
 
   try {
-    const sections = await cached(`sections:${course}:${term}:${details ? "details" : "rows"}`, details ? tenMinutes : tenMinutes, () =>
-      fetchUcfClassSections(course, term, { includeSeatDetails: details })
-    );
-    return json({
-      course,
-      sections,
-      sourceStatus: details ? "Live myUCF seat and waitlist details." : "Live myUCF section rows."
-    });
+    const index = await loadServerUcfSectionIndex();
+    const indexedCourse = index?.term === term
+      ? index.courses.find((candidate) => likelyCourseCode(candidate.code) === course)
+      : null;
+
+    if (indexedCourse) {
+      return json({
+        course,
+        sections: indexedCourse.sections,
+        sourceStatus: `Indexed UCF sections from ${new Date(index?.generatedAt ?? Date.now()).toLocaleDateString()}.`
+      });
+    }
+
+    return json({ course, sections: [], sourceStatus: "Course is not in the nightly UCF index." });
   } catch (error) {
     return json(
       {

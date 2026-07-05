@@ -5,7 +5,6 @@ https://github.com/atcupps/Jupiterp/LICENSE).
 Copyright (C) 2026 Andrew Cupps
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import type { Instructor } from '@jupiterp/jupiterp';
 	import { ptLinkFromSlug } from '../../../lib/course-planner/Professors';
 	import { ProfsLookupStore } from '../../../stores/CoursePlannerStores';
@@ -33,22 +32,6 @@ Copyright (C) 2026 Andrew Cupps
 	export let profsHover: boolean;
 	export let removeHoverSection: () => void;
 
-	let rmpRating: number | null = null;
-	let rmpUrl: string | null = null;
-
-	onMount(async () => {
-		if (!instructor || /^(TBA|To be Announced)$/i.test(instructor)) return;
-		try {
-			const res = await fetch(`/api/ucf/rmp?name=${encodeURIComponent(instructor)}`);
-			if (!res.ok) return;
-			const data = await res.json();
-			rmpRating = typeof data.rating === 'number' ? data.rating : null;
-			rmpUrl = typeof data.url === 'string' ? data.url : null;
-		} catch {
-			rmpRating = null;
-			rmpUrl = null;
-		}
-	});
 </script>
 
 <div class="text-sm xl:text-base">
@@ -90,33 +73,6 @@ Copyright (C) 2026 Andrew Cupps
 			style="--rating: {convertRating(profs[instructor].average_rating) + '%'}"
 			class="stars align-[2px] text-[8px] font-bold text-orange xl:text-[10px] 2xl:text-base"
 			title="{profs[instructor].average_rating} out of 5"
-		>
-			★★★★★
-		</span>
-	{:else if rmpRating != null}
-		<a
-			href={rmpUrl ?? `https://www.ratemyprofessors.com/search/professors/1082?q=${instructor}`}
-			target="_blank"
-			class="inline-flex flex-wrap rounded-md
-                            text-orange underline transition
-                            hover:bg-hoverLight hover:dark:bg-hoverDark"
-			on:mouseenter={() => {
-				profsHover = true;
-				removeHoverSection();
-			}}
-			on:mouseleave={() => {
-				profsHover = false;
-				removeHoverSection();
-			}}
-			on:click={handleLinkClick}
-			title="View instructor on RateMyProfessors"
-		>
-			{instructor}
-		</a>
-		<span
-			style="--rating: {rmpRating * 20 + '%'}"
-			class="stars align-[2px] text-[8px] font-bold text-orange xl:text-[10px] 2xl:text-base"
-			title="{rmpRating} out of 5"
 		>
 			★★★★★
 		</span>

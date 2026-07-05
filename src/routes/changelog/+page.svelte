@@ -9,7 +9,7 @@
 		storage, UCF catalog data, myUCF class sections, and RateMyProfessors data.
 	</ChangelogItem>
 
-	<ChangelogItem title="Live UCF Sources" version="v1.0.0" date="July 4, 2026">
+	<ChangelogItem title="Indexed UCF Sources" version="v1.0.0" date="July 4, 2026">
 		Added UCF Kuali catalog search, myUCF section meeting parsing, live seat and waitlist parsing,
 		UCF department lookup, UCF map links, and professor search by @name.
 	</ChangelogItem>

@@ -25,38 +25,10 @@ import type {
 	Meeting as UcfMeeting,
 	Section as UcfSection
 } from '$lib/ucf/types';
-import {
-	fetchUcfClassSections,
-	fetchUcfProfessorCourses,
-	fetchUcfSubjects,
-	normalizeCourseCode,
-	searchUcfCatalog,
-	UCF_CLASS_SEARCH_URL
-} from '$lib/ucf/ucfSources';
+import { normalizeCourseCode } from '$lib/ucf/ucfSources';
 import { filterIndexedCourses, loadUcfSectionIndex } from '$lib/ucf/sectionIndex';
 
 const DEFAULT_TERM = 'Fall 2026';
-const COURSE_CACHE_MS = 10 * 60 * 1000;
-const DEPT_CACHE_MS = 60 * 60 * 1000;
-const CATALOG_CACHE_MS = 60 * 60 * 1000;
-
-type CacheEntry<T> = {
-	expires: number;
-	value: Promise<T>;
-};
-
-const cache = new Map<string, CacheEntry<unknown>>();
-
-function cached<T>(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T> {
-	const now = Date.now();
-	const current = cache.get(key) as CacheEntry<T> | undefined;
-	if (current && current.expires > now) {
-		return current.value;
-	}
-	const value = loader();
-	cache.set(key, { expires: now + ttlMs, value });
-	return value;
-}
 
 function ok<T>(data: T[]): ApiResponse<T> {
 	return new ApiResponse<T>(200, 'OK', data);
@@ -178,67 +150,19 @@ function filterCourses(courses: Course[], cfg: CoursesWithSectionsConfig | Cours
 }
 
 async function coursesWithSectionsData(cfg: CoursesWithSectionsConfig): Promise<Course[]> {
-	const limit = cfg.limit ?? 80;
 	const index = await loadUcfSectionIndex();
-	if (index?.complete && index.term === DEFAULT_TERM && index.courses.length > 0) {
+	if (index?.term === DEFAULT_TERM && index.courses.length > 0) {
 		const indexedCourses = filterIndexedCourses(index.courses, cfg);
-		if (indexedCourses.length > 0 || cfg.prefix !== undefined || cfg.number !== undefined || cfg.instructor) {
-			return indexedCourses.map(courseToPlannerCourse);
-		}
+		return indexedCourses.map(courseToPlannerCourse);
 	}
-
-	if (cfg.instructor) {
-		const instructor = cfg.instructor.trim();
-		const courses = await cached(`professor:${DEFAULT_TERM}:${instructor}:${limit}`, COURSE_CACHE_MS, () =>
-			fetchUcfProfessorCourses(instructor, DEFAULT_TERM, limit)
-		);
-		return filterCourses(courses.map(courseToPlannerCourse), cfg);
-	}
-
-	let catalogCourses: UcfCourse[] = [];
-	const shouldLoadSections = cfg.courseCodes != null && cfg.courseCodes.size > 0;
-	if (cfg.courseCodes && cfg.courseCodes.size > 0) {
-		catalogCourses = (
-			await Promise.all(
-				[...cfg.courseCodes].map((code) =>
-					cached(`catalog:exact:${normalizeCourseCode(code)}`, CATALOG_CACHE_MS, () =>
-						searchUcfCatalog(normalizeCourseCode(code), 1, { includeDetails: true })
-					)
-				)
-			)
-		).flat();
-	} else if (cfg.prefix !== undefined) {
-		catalogCourses = await cached(`catalog:prefix:${cfg.prefix}:${limit}`, CATALOG_CACHE_MS, () =>
-			searchUcfCatalog(cfg.prefix ?? '', limit, { includeDetails: false })
-		);
-	} else if (cfg.number !== undefined) {
-		catalogCourses = await cached(`catalog:number:${cfg.number}:${limit}`, CATALOG_CACHE_MS, () =>
-			searchUcfCatalog(cfg.number ?? '', limit, { includeDetails: false })
-		);
-	}
-
-	const withSections = shouldLoadSections
-		? await Promise.all(
-				catalogCourses.map(async (course) => ({
-					...course,
-					scheduleUrl: UCF_CLASS_SEARCH_URL,
-					sections: await cached(
-						`sections:${DEFAULT_TERM}:${normalizeCourseCode(course.code)}`,
-						COURSE_CACHE_MS,
-						() => fetchUcfClassSections(course.code, DEFAULT_TERM, { includeSeatDetails: false })
-					)
-				}))
-			)
-		: catalogCourses;
-
-	return filterCourses(withSections.map(courseToPlannerCourse), cfg);
+	return [];
 }
 
 export const client = {
 	async deptList(): Promise<DepartmentsResponse> {
 		try {
 			const index = await loadUcfSectionIndex();
-			if (index?.complete && index.departments.length > 0) {
+			if (index?.departments.length) {
 				return ok<Department>(
 					index.departments.map((dept) => ({
 						deptCode: dept.code,
@@ -246,13 +170,7 @@ export const client = {
 					}))
 				);
 			}
-			const departments = await cached('departments', DEPT_CACHE_MS, fetchUcfSubjects);
-			return ok<Department>(
-				departments.map((dept) => ({
-					deptCode: dept.code,
-					name: dept.name
-				}))
-			);
+			return ok<Department>([]);
 		} catch (error) {
 			return fail<Department>(error);
 		}
@@ -295,23 +213,31 @@ export const client = {
 
 	async activeInstructors(cfg: InstructorsConfig): Promise<InstructorsResponse> {
 		const index = await loadUcfSectionIndex();
-		const names = new Set<string>();
-		if (!index?.complete) return ok<Instructor>([]);
-		index.courses.forEach((course) => {
-			course.sections.forEach((section) => {
-				if (section.professorName && section.professorName !== 'TBA') {
-					names.add(section.professorName);
-				}
-			});
-		});
-		const instructors = [...names]
-			.sort()
-			.slice(cfg.offset ?? 0, (cfg.offset ?? 0) + (cfg.limit ?? names.size))
-			.map((name) => ({
-				name,
-				slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
-				average_rating: null
+		if (!index) return ok<Instructor>([]);
+		const instructors = (index.instructors ?? deriveIndexedInstructors(index.courses))
+			.sort((a, b) => a.name.localeCompare(b.name))
+			.slice(cfg.offset ?? 0, (cfg.offset ?? 0) + (cfg.limit ?? index.courses.length))
+			.map((instructor) => ({
+				name: instructor.name,
+				slug: instructor.slug,
+				average_rating: instructor.average_rating
 			}));
 		return ok<Instructor>(instructors);
 	}
 };
+
+function deriveIndexedInstructors(courses: UcfCourse[]) {
+	const instructors = new Map<string, Instructor>();
+	courses.forEach((course) => {
+		course.sections.forEach((section) => {
+			if (!section.professorName || /^(TBA|To be Announced)$/i.test(section.professorName)) return;
+			const rating = section.professorRating ? section.professorRating.toFixed(1) : null;
+			instructors.set(section.professorName, {
+				name: section.professorName,
+				slug: section.professorRatingUrl?.split('/').pop() ?? section.professorName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+				average_rating: rating
+			});
+		});
+	});
+	return [...instructors.values()];
+}
