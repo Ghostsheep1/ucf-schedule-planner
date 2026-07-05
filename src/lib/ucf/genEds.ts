@@ -16,10 +16,10 @@ export const UCF_GEN_EDS: UcfGenEd[] = [
 	{ code: 'GEP10', name: 'Cultural and Historical Foundation' },
 	{ code: 'GEP11', name: 'Humanities Foundation' },
 	{ code: 'GEP12', name: 'Humanities Foundation' },
-	{ code: 'GRW', name: 'Gordon Rule Writing' },
-	{ code: 'GRM', name: 'Gordon Rule Math' },
-	{ code: 'STATE-MATH', name: 'State Core Math' },
-	{ code: 'STATE-SCI', name: 'State Core Science' },
-	{ code: 'CIVIC', name: 'Civic Literacy' },
+	{ code: 'STATE-WRITING', name: 'State Writing Requirement' },
+	{ code: 'STATE-MATH', name: 'State Mathematics Requirement' },
+	{ code: 'STATE-CORE-MATH', name: 'State Core Mathematics' },
+	{ code: 'STATE-CORE-SCI', name: 'State Core Science' },
+	{ code: 'CIVIC', name: 'Civic Literacy Requirement' },
 	{ code: 'HONORS', name: 'Honors' }
 ];
