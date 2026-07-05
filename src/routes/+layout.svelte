@@ -7,10 +7,12 @@ Copyright (C) 2026 Andrew Cupps
 <script lang="ts">
 	import '../app.css';
 	import Analytics from '../components/layout/Analytics.svelte';
+	import AppUpdateReloader from '../components/layout/AppUpdateReloader.svelte';
 	import SiteLinks from '../components/layout/SiteLinks.svelte';
 </script>
 
 <Analytics />
+<AppUpdateReloader />
 
 <div class="fixed z-[50] w-full px-4">
 	<div

@@ -4,5 +4,16 @@
 	"framework": "sveltekit",
 	"installCommand": "npm install",
 	"buildCommand": "npm run build",
-	"devCommand": "npm run dev -- --host"
+	"devCommand": "npm run dev -- --host",
+	"headers": [
+		{
+			"source": "/data/ucf-section-index.json",
+			"headers": [
+				{
+					"key": "Cache-Control",
+					"value": "no-cache, must-revalidate"
+				}
+			]
+		}
+	]
 }

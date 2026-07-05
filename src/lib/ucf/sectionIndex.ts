@@ -30,7 +30,7 @@ export async function loadUcfSectionIndex(): Promise<UcfSectionIndex | null> {
 	if (indexPromise) return indexPromise;
 	if (typeof window === 'undefined') return null;
 
-	indexPromise = fetch('/data/ucf-section-index.json', { cache: 'force-cache' })
+	indexPromise = fetch('/data/ucf-section-index.json', { cache: 'no-cache' })
 		.then((response) => (response.ok ? (response.json() as Promise<UcfSectionIndex>) : null))
 		.catch(() => null);
 	return indexPromise;
