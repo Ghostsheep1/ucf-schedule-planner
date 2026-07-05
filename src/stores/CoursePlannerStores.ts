@@ -9,6 +9,10 @@ import type { Course, Department, Instructor } from '@jupiterp/jupiterp';
 import { writable, type Writable } from 'svelte/store';
 import type { CourseSectionPair, FilterParams, ScheduleSelection, StoredSchedule } from '../types';
 
+export type InstructorWithRatingCount = Instructor & {
+	rating_count?: number | null;
+};
+
 /**
  * Shared planner state for components.
  */
@@ -24,7 +28,7 @@ export const PlannerState: Writable<{
 /* Initially set to an empty record since the data used here is
 /* loaded in `+page.svelte`.
  */
-export const ProfsLookupStore: Writable<Record<string, Instructor>> = writable({});
+export const ProfsLookupStore: Writable<Record<string, InstructorWithRatingCount>> = writable({});
 
 /** Track which section is being hovered by the user in Course Search */
 export const HoveredSectionStore: Writable<ScheduleSelection | null> = writable(null);
