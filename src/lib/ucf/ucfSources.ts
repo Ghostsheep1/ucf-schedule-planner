@@ -247,6 +247,14 @@ async function coursesForSubject(subject: string, limit: number, options: Catalo
   return options.includeDetails ? Promise.all(matches.map((course) => getUcfCatalogCourse(course))) : matches.map(catalogResultToCourse);
 }
 
+export async function fetchUcfCatalogCourses(options: CatalogSearchOptions = {}): Promise<Course[]> {
+  const catalogCourses = await kualiFetch<KualiCourse[]>(`/courses/${UCF_CATALOG_ID}`);
+  const sorted = catalogCourses.sort(compareCourseCodes);
+  return options.includeDetails
+    ? Promise.all(sorted.map((course) => getUcfCatalogCourse(course)))
+    : sorted.map(catalogResultToCourse);
+}
+
 function compareCourseCodes(a: { code?: string; __catalogCourseId?: string }, b: { code?: string; __catalogCourseId?: string }) {
   const parse = (code: string) => normalizeCourseCode(code).match(/^([A-Z]+)(\d+)([A-Z]*)$/);
   const aCode = a.code || a.__catalogCourseId || "";
@@ -274,13 +282,14 @@ async function searchUcfCatalogOnce(query: string, limit = 10, options: CatalogS
     : results.map(catalogResultToCourse);
 }
 
-function catalogResultToCourse(result: KualiSearchResult): Course {
+function catalogResultToCourse(result: KualiSearchResult | KualiCourse): Course {
   const code = result.code || result.__catalogCourseId || "";
+  const credits = "credits" in result ? result.credits?.value ?? result.credits?.credits?.min ?? 0 : 0;
   return {
     id: result.id || result.pid || code,
     code,
     title: result.title,
-    credits: 0,
+    credits,
     genEdTags: [],
     description: result.description || "",
     prerequisites: "See UCF catalog.",

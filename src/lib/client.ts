@@ -33,6 +33,7 @@ import {
 	searchUcfCatalog,
 	UCF_CLASS_SEARCH_URL
 } from '$lib/ucf/ucfSources';
+import { filterIndexedCourses, loadUcfSectionIndex } from '$lib/ucf/sectionIndex';
 
 const DEFAULT_TERM = 'Fall 2026';
 const COURSE_CACHE_MS = 10 * 60 * 1000;
@@ -178,6 +179,14 @@ function filterCourses(courses: Course[], cfg: CoursesWithSectionsConfig | Cours
 
 async function coursesWithSectionsData(cfg: CoursesWithSectionsConfig): Promise<Course[]> {
 	const limit = cfg.limit ?? 80;
+	const index = await loadUcfSectionIndex();
+	if (index?.complete && index.term === DEFAULT_TERM && index.courses.length > 0) {
+		const indexedCourses = filterIndexedCourses(index.courses, cfg);
+		if (indexedCourses.length > 0 || cfg.prefix !== undefined || cfg.number !== undefined || cfg.instructor) {
+			return indexedCourses.map(courseToPlannerCourse);
+		}
+	}
+
 	if (cfg.instructor) {
 		const instructor = cfg.instructor.trim();
 		const courses = await cached(`professor:${DEFAULT_TERM}:${instructor}:${limit}`, COURSE_CACHE_MS, () =>
@@ -228,6 +237,15 @@ async function coursesWithSectionsData(cfg: CoursesWithSectionsConfig): Promise<
 export const client = {
 	async deptList(): Promise<DepartmentsResponse> {
 		try {
+			const index = await loadUcfSectionIndex();
+			if (index?.complete && index.departments.length > 0) {
+				return ok<Department>(
+					index.departments.map((dept) => ({
+						deptCode: dept.code,
+						name: dept.name
+					}))
+				);
+			}
 			const departments = await cached('departments', DEPT_CACHE_MS, fetchUcfSubjects);
 			return ok<Department>(
 				departments.map((dept) => ({
@@ -275,7 +293,25 @@ export const client = {
 		}
 	},
 
-	async activeInstructors(_cfg: InstructorsConfig): Promise<InstructorsResponse> {
-		return ok<Instructor>([]);
+	async activeInstructors(cfg: InstructorsConfig): Promise<InstructorsResponse> {
+		const index = await loadUcfSectionIndex();
+		const names = new Set<string>();
+		if (!index?.complete) return ok<Instructor>([]);
+		index.courses.forEach((course) => {
+			course.sections.forEach((section) => {
+				if (section.professorName && section.professorName !== 'TBA') {
+					names.add(section.professorName);
+				}
+			});
+		});
+		const instructors = [...names]
+			.sort()
+			.slice(cfg.offset ?? 0, (cfg.offset ?? 0) + (cfg.limit ?? names.size))
+			.map((name) => ({
+				name,
+				slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+				average_rating: null
+			}));
+		return ok<Instructor>(instructors);
 	}
 };

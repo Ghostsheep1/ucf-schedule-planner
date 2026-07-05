@@ -1,6 +1,8 @@
 import { json } from "@sveltejs/kit";
 import { RMP_UCF_SCHOOL_ID, fetchUcfClassSections, fetchUcfProfessorCourses, searchUcfCatalog } from "$lib/ucf/ucfSources";
 import { cached } from "$lib/server/cache";
+import { loadServerUcfSectionIndex } from "$lib/server/ucfSectionIndex";
+import { searchIndexedCourses } from "$lib/ucf/sectionIndex";
 import type { Course } from "$lib/ucf/types";
 import type { RequestHandler } from "./$types";
 
@@ -37,6 +39,18 @@ export const GET: RequestHandler = async ({ url }) => {
       `search:${query}:${term}:${includeSections}:${includeDetails}:${requestedLimit}`,
       tenMinutes,
       async (): Promise<{ courses: Course[]; sourceStatus: string }> => {
+    const index = await loadServerUcfSectionIndex();
+    if (index?.complete && index.term === term && index.courses.length > 0 && !includeDetails) {
+      const indexedLimit = requestedLimit || (/^[A-Za-z]{2,5}\s*$/.test(catalogQuery || query) ? 80 : 40);
+      const indexedCourses = searchIndexedCourses(index.courses, catalogQuery, indexedLimit, professorToken);
+      if (indexedCourses.length > 0 || professorToken || catalogQuery) {
+        return {
+          courses: includeSections ? indexedCourses : indexedCourses.map((course) => ({ ...course, sections: [] })),
+          sourceStatus: `Indexed UCF sections from ${new Date(index.generatedAt).toLocaleDateString()}. Seats and waitlists refresh live.`
+        };
+      }
+    }
+
     if (professorToken && catalogQuery.length < 2) {
       const courses = await fetchUcfProfessorCoursesWithFallbacks(professorToken, term, requestedLimit || 40);
       return {
