@@ -5,21 +5,14 @@ https://github.com/atcupps/Jupiterp/LICENSE).
 Copyright (C) 2026 Andrew Cupps
 -->
 <script lang="ts">
-	import type { GenEd } from '@jupiterp/jupiterp';
-	import {
-		AdjustmentsHorizontalOutline,
-		AngleDownOutline,
-		CloseOutline
-	} from 'flowbite-svelte-icons';
+	import { AdjustmentsHorizontalOutline } from 'flowbite-svelte-icons';
 	import { slide } from 'svelte/transition';
 	import type { FilterParams } from '../../../types';
 	import { CourseSearchFilterStore } from '../../../stores/CoursePlannerStores';
-	import { UCF_GEN_EDS } from '$lib/ucf/genEds';
 
 	let appliedFiltersCount = 0;
 	let showFiltersMenu = false;
 	export let showGenEdMenu = false;
-	let genEdSelections: GenEd[] = [];
 	let onlyOpenSections = false;
 
 	const defaultMinCredits = 0;
@@ -34,12 +27,6 @@ Copyright (C) 2026 Andrew Cupps
 		};
 		appliedFiltersCount = 0;
 
-		if (genEdSelections.length > 0) {
-			appliedFiltersCount += 1;
-			params.serverSideFilters.genEds = genEdSelections.sort((a, b) =>
-				a.code.localeCompare(b.code)
-			);
-		}
 		if (minCredits !== 0) {
 			appliedFiltersCount += 1;
 			params.clientSideFilters.minCredits = minCredits;
@@ -66,7 +53,7 @@ Copyright (C) 2026 Andrew Cupps
 	}
 
 	function resetFilters() {
-		genEdSelections = [];
+		showGenEdMenu = false;
 		minCredits = defaultMinCredits;
 		maxCredits = defaultMaxCredits;
 		onlyOpenSections = false;
@@ -109,100 +96,6 @@ Copyright (C) 2026 Andrew Cupps
 	<!-- Filters menu -->
 	{#if showFiltersMenu}
 		<div class="mx-1 my-1 flex flex-col gap-2 px-2 py-1 text-xs" transition:slide>
-			<!-- UCF GEPs -->
-			<div class="flex flex-row text-xs">
-				<span class="min-w-16 whitespace-nowrap"> GEPs: </span>
-
-				<div class="flex grow flex-col">
-					<!-- GEP buttons -->
-					<div class="flex w-full flex-row items-center">
-						<!-- Show/hide GEP menu button -->
-						<!-- format-check exempt 21 10 -->
-						<button
-							class="border-1 flex h-full grow
-                                    flex-row items-center
-                                    rounded-l-md border-b border-l
-                                    border-t border-secCodesLight text-left hover:bg-hoverLight
-                                    focus-visible:ring dark:border-divBorderDark
-                                    dark:hover:bg-divBorderDark"
-							title="Show/hide UCF GEP selection menu"
-							on:click={() => {
-								showGenEdMenu = !showGenEdMenu;
-							}}
-						>
-							<span
-								class="border-1 h-full content-center
-                                        border-r border-secCodesDark
-                                        px-0.5 dark:border-divBorderDark"
-							>
-								<AngleDownOutline class="h-4 w-4" />
-							</span>
-							<span class="w-full bg-bgLight px-1 dark:bg-bgDark">
-								{#if Array.from(genEdSelections).length === 0}
-									Select GEPs
-								{:else}
-									{Array.from(genEdSelections)
-										.map((g) => g.code)
-										.join(', ')}
-								{/if}
-							</span>
-						</button>
-
-						<!-- Clear GEP filters -->
-						<button
-							class="border-1 h-full self-end
-                                    rounded-r-md border border-secCodesDark
-                                    px-0.5
-                                    hover:bg-hoverLight
-                                    dark:border-divBorderDark
-                                    hover:dark:bg-hoverDark"
-							title="Clear GEP filters"
-							on:click={() => {
-								genEdSelections = [];
-							}}
-						>
-							<CloseOutline class="h-4 w-4" />
-						</button>
-					</div>
-
-					<!-- GEP checkbox menu -->
-					{#if showGenEdMenu}
-						<div
-							class="mt-1 flex flex-col
-                                    gap-2 py-2"
-							transition:slide={{ duration: 350 }}
-						>
-							<!-- Individual GEP checkbox -->
-							<!-- format-check exempt 25 15 -->
-							{#each UCF_GEN_EDS as genEd}
-								<div class="flex flex-row items-center">
-									<input
-										type="checkbox"
-										checked={genEdSelections.includes(genEd)}
-										id={'gened-' + genEd.code}
-										class="mr-2 mt-0.5 rounded-md border-secCodesDark
-                                            bg-divBorderLight text-orange
-                                            hover:cursor-pointer focus:ring-orange
-                                            dark:border-divBorderDark
-                                            dark:bg-divBorderDark"
-										on:click={() => {
-											if (genEdSelections.includes(genEd)) {
-												genEdSelections = genEdSelections.filter((g) => g !== genEd);
-											} else {
-												genEdSelections = [...genEdSelections, genEd];
-											}
-										}}
-									/>
-									<label for={'gened-' + genEd.code} class="text-xs hover:cursor-pointer">
-										{genEd.code} - {genEd.name}
-									</label>
-								</div>
-							{/each}
-						</div>
-					{/if}
-				</div>
-			</div>
-
 			<!-- Credits -->
 			<div class="flex flex-row gap-4">
 				<!-- Min credits -->
