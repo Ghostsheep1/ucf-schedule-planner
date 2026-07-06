@@ -7,6 +7,7 @@ Copyright (C) 2026 Andrew Cupps
 <script lang="ts">
 	import type { ClassMeeting } from '@jupiterp/jupiterp';
 	import { formatClassDayTime, formatLocation } from '../../../lib/course-planner/Formatting';
+	import { isUcfBuilding, ucfBuildingUrl } from '$lib/ucf/buildings';
 
 	export let meeting: ClassMeeting;
 	export let locationHover: boolean;
@@ -18,9 +19,6 @@ Copyright (C) 2026 Andrew Cupps
 		event.stopPropagation();
 	}
 
-	function generateMapURL(location: string): string {
-		return `https://map.ucf.edu/?show=${encodeURIComponent(location)}`;
-	}
 </script>
 
 <div class="flex w-full flex-row text-xs font-medium 2xl:text-base">
@@ -36,13 +34,13 @@ Copyright (C) 2026 Andrew Cupps
 		<span class:grow={!condensed} class:text-right={!condensed}>
 			{#if condensed}&nbsp;in
 			{/if}
-			{#if meeting.location.building.length !== 3 || meeting.location.room == null}
+			{#if !isUcfBuilding(meeting.location.building)}
 				<span class="pr-0.5">
 					{formatLocation(meeting.location)}
 				</span>
 			{:else}
 				<a
-					href={generateMapURL(meeting.location.building)}
+					href={ucfBuildingUrl(meeting.location.building)}
 					class="rounded-md p-0.5 text-orange underline
                         transition hover:bg-hoverLight hover:dark:bg-hoverDark"
 					on:mouseenter={() => {
@@ -55,7 +53,7 @@ Copyright (C) 2026 Andrew Cupps
 					}}
 					on:click={handleLinkClick}
 					target="_blank"
-					title="View on UCF Map"
+					title="View UCF building page"
 				>
 					{formatLocation(meeting.location)}
 				</a>
