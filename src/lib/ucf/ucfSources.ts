@@ -292,7 +292,7 @@ function catalogResultToCourse(result: KualiSearchResult | KualiCourse): Course 
     credits,
     genEdTags: [],
     description: result.description || "",
-    prerequisites: "See UCF catalog.",
+    prerequisites: "",
     catalogUrl: `${UCF_CATALOG_REFERER}#/courses/view/${result.id}`,
     scheduleUrl: UCF_CLASS_SEARCH_URL,
     sections: []
@@ -309,7 +309,7 @@ export async function getUcfCatalogCourse(result: KualiSearchResult): Promise<Co
     credits: detail.credits?.value ?? detail.credits?.credits?.min ?? 0,
     genEdTags: [],
     description: detail.description || result.description || "",
-    prerequisites: stripHtml(detail.prerequisites) || "See UCF catalog.",
+    prerequisites: stripHtml(detail.prerequisites),
     catalogUrl: `${UCF_CATALOG_REFERER}#/courses/view/${detail.id || result.id}`,
     scheduleUrl: UCF_CLASS_SEARCH_URL,
     sections: []
@@ -558,7 +558,7 @@ function parsePeopleSoftCourseResults(html: string): Course[] {
           credits: 0,
           genEdTags: [],
           description: "",
-          prerequisites: "See UCF catalog.",
+          prerequisites: "",
           catalogUrl: UCF_CATALOG_REFERER,
           scheduleUrl: UCF_CLASS_SEARCH_URL,
           sections
