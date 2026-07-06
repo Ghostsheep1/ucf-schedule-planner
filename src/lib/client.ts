@@ -44,6 +44,7 @@ function fail<T>(error: unknown): ApiResponse<T> {
 }
 
 function courseToBasic(course: UcfCourse): CourseBasic {
+	const prerequisites = normalizePrerequisites(course.prerequisites);
 	return {
 		courseCode: normalizeCourseCode(course.code),
 		name: course.title,
@@ -52,9 +53,15 @@ function courseToBasic(course: UcfCourse): CourseBasic {
 		genEds: course.genEdTags.length
 			? course.genEdTags.map((tag) => ({ code: tag, name: tag }))
 			: null,
-		conditions: course.prerequisites ? [`Prerequisite: ${course.prerequisites}`] : null,
+		conditions: prerequisites ? [`Prerequisite: ${prerequisites}`] : null,
 		description: course.description || null
 	};
+}
+
+function normalizePrerequisites(prerequisites?: string) {
+	const trimmed = prerequisites?.trim();
+	if (!trimmed || /^see ucf catalog\.?$/i.test(trimmed)) return '';
+	return trimmed;
 }
 
 function courseToPlannerCourse(course: UcfCourse): Course {
