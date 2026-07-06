@@ -93,7 +93,8 @@ export function formatInstructors(instructors: string[]): string {
  * @param courseCode The course code for which to generate a link
  */
 export function myUcfClassSearchLink(courseCode: string): string {
-	return `https://my.ucf.edu/class-search/?search=${courseCode}`;
+	void courseCode;
+	return 'https://csprod-ss.net.ucf.edu/psc/CSPROD/EMPLOYEE/SA/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL';
 }
 
 /**
