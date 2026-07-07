@@ -20,6 +20,8 @@ describe('singleRelaxations', () => {
 			latestEndMinutes: 17 * 60,
 			daysOff,
 			onlyOpenSeats: true,
+			maxWaitlist: null,
+			instructionModes: new Set<string>(),
 			minGapMinutes: 15,
 			minCredits: 12
 		});
