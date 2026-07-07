@@ -8,16 +8,22 @@ Copyright (C) 2026 Andrew Cupps
 	import { CloseOutline } from 'flowbite-svelte-icons';
 	import { splitCourseCode } from '../../lib/course-planner/Formatting';
 	import GeneratorSelect from './GeneratorSelect.svelte';
-	import { GeneratorRequirementsStore } from '../../stores/GeneratorStores';
+	import { GeneratorConstraintsStore, GeneratorRequirementsStore } from '../../stores/GeneratorStores';
 	import type { GeneratorRequirement } from '../../stores/GeneratorStores';
 
 	export let requirement: GeneratorRequirement;
 	export let index: number;
 
+	let onlyOpenSeats = true;
+	GeneratorConstraintsStore.subscribe((constraints) => {
+		onlyOpenSeats = constraints.onlyOpenSeats;
+	});
+
 	$: sections = requirement.course.sections ?? [];
-	$: instructors = Array.from(new Set(sections.flatMap((s) => s.instructors))).sort();
+	$: selectableSections = onlyOpenSeats ? sections.filter((section) => section.openSeats > 0) : sections;
+	$: instructors = Array.from(new Set(selectableSections.flatMap((s) => s.instructors))).sort();
 	$: pinMode = requirement.pin.kind;
-	$: sectionOptions = sections.map((s) => ({ value: s.sectionCode, label: s.sectionCode }));
+	$: sectionOptions = selectableSections.map((s) => ({ value: s.sectionCode, label: s.sectionCode }));
 	$: instructorOptions = instructors.map((n) => ({ value: n, label: n }));
 
 	function patch(next: Partial<GeneratorRequirement>) {
@@ -32,10 +38,37 @@ Copyright (C) 2026 Andrew Cupps
 
 	function setPinMode(mode: string) {
 		if (mode === 'bySection') {
-			const first = sections[0]?.sectionCode ?? '';
+			const first = selectableSections[0]?.sectionCode ?? '';
 			patch({ pin: { kind: 'bySection', sectionCode: first } });
 		} else if (mode === 'byInstructor') {
 			patch({ pin: { kind: 'byInstructor', name: instructors[0] ?? '' } });
+		} else {
+			patch({ pin: { kind: 'none' } });
+		}
+	}
+
+	$: if (
+		pinMode === 'bySection' &&
+		!sectionOptions.some(
+			(option) =>
+				requirement.pin.kind === 'bySection' && option.value === requirement.pin.sectionCode
+		)
+	) {
+		if (sectionOptions[0]) {
+			patch({ pin: { kind: 'bySection', sectionCode: sectionOptions[0].value } });
+		} else {
+			patch({ pin: { kind: 'none' } });
+		}
+	}
+
+	$: if (
+		pinMode === 'byInstructor' &&
+		!instructorOptions.some(
+			(option) => requirement.pin.kind === 'byInstructor' && option.value === requirement.pin.name
+		)
+	) {
+		if (instructorOptions[0]) {
+			patch({ pin: { kind: 'byInstructor', name: instructorOptions[0].value } });
 		} else {
 			patch({ pin: { kind: 'none' } });
 		}
