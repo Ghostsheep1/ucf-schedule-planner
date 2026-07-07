@@ -31,6 +31,7 @@ import {
 	loadUcfSectionIndex,
 	type IndexedInstructor
 } from '$lib/ucf/sectionIndex';
+import type { PlannerSection } from '$lib/sectionFilters';
 
 const DEFAULT_TERM = 'Fall 2026';
 
@@ -68,12 +69,14 @@ function courseToPlannerCourse(course: UcfCourse): Course {
 	return {
 		...courseToBasic(course),
 		sections: course.sections.length
-			? course.sections.map((section) => sectionToPlannerSection(course, section))
+			? bundleUcfSections(course).map((section) => sectionToPlannerSection(course, section))
 			: null
 	};
 }
 
-function sectionToPlannerSection(course: UcfCourse, section: UcfSection): Section {
+type UcfSectionBundle = UcfSection & { components?: string[] };
+
+function sectionToPlannerSection(course: UcfCourse, section: UcfSectionBundle): Section {
 	const meetings = section.meetings.map(meetingToPlannerMeeting);
 	return {
 		courseCode: normalizeCourseCode(course.code),
@@ -83,8 +86,126 @@ function sectionToPlannerSection(course: UcfCourse, section: UcfSection): Sectio
 		openSeats: section.seatsAvailable,
 		totalSeats: section.seatsTotal,
 		waitlist: section.waitlistTotal ?? 0,
-		holdfile: null
+		holdfile: null,
+		mode: section.mode,
+		campus: section.campus,
+		component: section.component,
+		components: section.components ?? (section.component ? [section.component] : []),
+		waitlistCapacity: section.waitlistCapacity,
+		waitlistAvailable: section.waitlistAvailable
+	} as PlannerSection;
+}
+
+function bundleUcfSections(course: UcfCourse): UcfSectionBundle[] {
+	const sections = [...course.sections].sort((a, b) => sectionSortValue(a) - sectionSortValue(b));
+	const explicitLectures = sections.filter((section) => section.component === 'LEC');
+	const explicitChildren = sections.filter((section) =>
+		['DIS', 'LAB', 'CLN', 'RSC'].includes(section.component ?? '')
+	);
+	if (explicitLectures.length > 0 && explicitChildren.length > 0) {
+		return pairLecturesWithChildren(explicitLectures, explicitChildren, sections);
+	}
+
+	const splitIndex = inferLectureChildSplit(sections);
+	if (splitIndex === -1) return sections;
+	return pairLecturesWithChildren(sections.slice(0, splitIndex), sections.slice(splitIndex), sections);
+}
+
+function pairLecturesWithChildren(
+	lectures: UcfSection[],
+	children: UcfSection[],
+	original: UcfSection[]
+): UcfSectionBundle[] {
+	const childGroups = groupChildrenForLectures(lectures, children);
+	if (childGroups.length === 0 || childGroups.every((group) => group.length === 0)) return original;
+
+	const bundled: UcfSectionBundle[] = [];
+	for (const lecture of lectures) {
+		const group = childGroups.shift();
+		if (!group || group.length === 0) {
+			bundled.push(lecture);
+			continue;
+		}
+		for (const child of group) {
+			bundled.push(mergeLectureAndChild(lecture, child));
+		}
+	}
+	return bundled;
+}
+
+function mergeLectureAndChild(lecture: UcfSection, child: UcfSection): UcfSectionBundle {
+	const lectureSeats = lecture.seatsTotal > 0 ? lecture.seatsAvailable : Number.MAX_SAFE_INTEGER;
+	const childSeats = child.seatsTotal > 0 ? child.seatsAvailable : Number.MAX_SAFE_INTEGER;
+	const openSeats = Math.min(lectureSeats, childSeats);
+	const waitlistTotal = Math.max(lecture.waitlistTotal ?? 0, child.waitlistTotal ?? 0);
+	const waitlistCapacity = Math.max(lecture.waitlistCapacity ?? 0, child.waitlistCapacity ?? 0) || undefined;
+	const components = [lecture.component ?? 'LEC', child.component ?? 'DIS'];
+	return {
+		...lecture,
+		id: `${lecture.id}+${child.id}`,
+		sectionNumber: `${lecture.sectionNumber}/${child.sectionNumber}`,
+		component: components.join('+'),
+		components,
+		professorName: lecture.professorName || child.professorName,
+		seatsAvailable: openSeats === Number.MAX_SAFE_INTEGER ? 0 : openSeats,
+		seatsTotal: finiteMin(lecture.seatsTotal, child.seatsTotal),
+		waitlistTotal,
+		waitlistCapacity,
+		waitlistAvailable:
+			waitlistCapacity !== undefined ? Math.max(0, waitlistCapacity - waitlistTotal) : undefined,
+		mode: mergeModes(lecture.mode, child.mode),
+		campus: lecture.campus === child.campus ? lecture.campus : lecture.campus,
+		meetings: [...lecture.meetings, ...child.meetings]
 	};
+}
+
+function finiteMin(a: number, b: number) {
+	const values = [a, b].filter((value) => value > 0);
+	return values.length > 0 ? Math.min(...values) : 0;
+}
+
+function mergeModes(a: UcfSection['mode'], b: UcfSection['mode']): UcfSection['mode'] {
+	if (a === b) return a;
+	return 'hybrid';
+}
+
+function groupChildrenForLectures(lectures: UcfSection[], children: UcfSection[]): UcfSection[][] {
+	const exact = lectures.map((lecture) =>
+		children.filter((child) => childGroupNumber(child) === sectionSortValue(lecture))
+	);
+	if (exact.every((group) => group.length > 0)) return exact;
+
+	const groups: UcfSection[][] = lectures.map(() => []);
+	let currentLecture = 0;
+	for (const child of children) {
+		if (
+			groups[currentLecture].length >= Math.ceil(children.length / lectures.length) &&
+			currentLecture < lectures.length - 1
+		) {
+			currentLecture += 1;
+		}
+		groups[currentLecture].push(child);
+	}
+	return groups;
+}
+
+function inferLectureChildSplit(sections: UcfSection[]) {
+	const values = sections.map(sectionSortValue);
+	for (let index = 1; index < values.length; index += 1) {
+		if (values[index - 1] < 10 && values[index] - values[index - 1] >= 5) {
+			return index;
+		}
+	}
+	return -1;
+}
+
+function childGroupNumber(section: UcfSection) {
+	return Math.floor(sectionSortValue(section) / 10);
+}
+
+function sectionSortValue(section: UcfSection) {
+	const numeric = Number(section.sectionNumber.replace(/\D/g, ''));
+	return Number.isFinite(numeric) ? numeric : Number.MAX_SAFE_INTEGER;
 }
 
 function meetingToPlannerMeeting(meeting: UcfMeeting): Section['meetings'][number] {
