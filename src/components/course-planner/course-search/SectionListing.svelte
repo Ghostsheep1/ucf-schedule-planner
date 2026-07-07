@@ -50,6 +50,13 @@ Copyright (C) 2026 Andrew Cupps
 		differences: noDifferences(),
 		colorNumber: -1
 	};
+	$: newSelection = {
+		course,
+		section,
+		hover: false,
+		differences: noDifferences(),
+		colorNumber: newSelection.colorNumber
+	};
 	let sectionAdded: boolean;
 	$: if (selectionsList || hoveredSection || onlyShowingOpen || false) {
 		if (onlyShowingOpen && section.openSeats === 0) {
@@ -65,6 +72,13 @@ Copyright (C) 2026 Andrew Cupps
 		hover: true,
 		differences: noDifferences(),
 		colorNumber: -1
+	};
+	$: hoverSection = {
+		course,
+		section,
+		hover: true,
+		differences: noDifferences(),
+		colorNumber: hoverSection.colorNumber
 	};
 
 	// Auto-scroll for non desktop screens: scroll up to schedule when adding a section
