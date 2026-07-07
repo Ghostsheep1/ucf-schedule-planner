@@ -14,6 +14,8 @@ Copyright (C) 2026 Andrew Cupps
 	let showFiltersMenu = false;
 	export let showGenEdMenu = false;
 	let onlyOpenSections = false;
+	let maxWaitlist = '';
+	let instructionMode = '';
 
 	const defaultMinCredits = 0;
 	const defaultMaxCredits = 20;
@@ -39,6 +41,18 @@ Copyright (C) 2026 Andrew Cupps
 			appliedFiltersCount += 1;
 			params.clientSideFilters.onlyOpen = onlyOpenSections;
 		}
+		if (maxWaitlist.trim() !== '') {
+			const parsed = parseInt(maxWaitlist, 10);
+			if (!Number.isNaN(parsed)) {
+				appliedFiltersCount += 1;
+				params.clientSideFilters.maxWaitlist = parsed;
+			}
+		}
+		if (instructionMode !== '') {
+			appliedFiltersCount += 1;
+			params.clientSideFilters.instructionModes =
+				instructionMode === 'online-hybrid' ? ['online', 'hybrid'] : [instructionMode];
+		}
 
 		if (appliedFiltersCount > 0) {
 			CourseSearchFilterStore.set({
@@ -57,6 +71,8 @@ Copyright (C) 2026 Andrew Cupps
 		minCredits = defaultMinCredits;
 		maxCredits = defaultMaxCredits;
 		onlyOpenSections = false;
+		maxWaitlist = '';
+		instructionMode = '';
 	}
 </script>
 
@@ -151,6 +167,37 @@ Copyright (C) 2026 Andrew Cupps
 				/>
 				<label for="only-open-sections" class="text-xs hover:cursor-pointer">
 					Only show open sections
+				</label>
+			</div>
+
+			<div class="flex flex-row flex-wrap items-center gap-3 text-xs">
+				<label class="flex flex-row items-center gap-2">
+					<span class="min-w-16">Mode:</span>
+					<select
+						bind:value={instructionMode}
+						class="rounded-md border border-secCodesDark bg-bgLight px-1 py-0
+							text-xs focus:outline-none focus:ring dark:border-divBorderDark
+							dark:bg-bgDark"
+					>
+						<option value="">Any</option>
+						<option value="in-person">In-person</option>
+						<option value="online">Online</option>
+						<option value="hybrid">Hybrid</option>
+						<option value="online-hybrid">Online or hybrid</option>
+					</select>
+				</label>
+				<label class="flex flex-row items-center gap-2">
+					<span>Max waitlist:</span>
+					<input
+						type="number"
+						min="0"
+						step="1"
+						placeholder="Any"
+						bind:value={maxWaitlist}
+						class="w-14 rounded-md border border-secCodesDark bg-bgLight px-1 py-0
+							text-xs focus:outline-none focus:ring dark:border-divBorderDark
+							dark:bg-bgDark"
+					/>
 				</label>
 			</div>
 		</div>
