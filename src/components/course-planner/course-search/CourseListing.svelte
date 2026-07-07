@@ -12,6 +12,7 @@ Copyright (C) 2026 Andrew Cupps
 	import { AngleRightOutline } from 'flowbite-svelte-icons';
 	import type { Course, Section } from '@jupiterp/jupiterp';
 	import type { Section as UcfSection } from '$lib/ucf/types';
+	import { CourseSearchFilterStore } from '../../../stores/CoursePlannerStores';
 
 	export let course: Course;
 	export let isDesktop: boolean;
@@ -20,7 +21,13 @@ Copyright (C) 2026 Andrew Cupps
 	let liveSections: Section[] | null = course.sections;
 	let loadingSections = false;
 	let sectionLoadError = '';
+	let onlyShowingOpen = false;
+	CourseSearchFilterStore.subscribe((store) => {
+		onlyShowingOpen = store.clientSideFilters.onlyOpen === true;
+	});
 	$: hasKnownCredits = course.minCredits > 0 || course.maxCredits != null;
+	$: visibleSections =
+		liveSections?.filter((section) => !onlyShowingOpen || section.openSeats > 0) ?? null;
 	$: if (course.courseCode) {
 		liveSections = course.sections;
 		loadingSections = false;
@@ -180,8 +187,8 @@ Copyright (C) 2026 Andrew Cupps
 		{/if}
 	</button>
 	<!-- Sections -->
-	{#if liveSections != null && liveSections.length > 0}
-		{#each liveSections as section}
+	{#if visibleSections != null && visibleSections.length > 0}
+		{#each visibleSections as section (section.sectionCode)}
 			<SectionListing courseCode={course.courseCode} {section} {course} {isDesktop} />
 		{/each}
 	{:else if showMoreInfo}
