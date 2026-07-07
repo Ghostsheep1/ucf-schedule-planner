@@ -30,6 +30,8 @@ export interface HardConstraints {
 	latestEndMinutes: number | null;
 	daysOff: Set<EngineDay>;
 	onlyOpenSeats: boolean;
+	maxWaitlist: number | null;
+	instructionModes: Set<string>;
 	minGapMinutes: number;
 	minCredits: number | null;
 }
@@ -44,6 +46,8 @@ export function defaultConstraints(): HardConstraints {
 		latestEndMinutes: null,
 		daysOff: new Set<EngineDay>(),
 		onlyOpenSeats: true,
+		maxWaitlist: null,
+		instructionModes: new Set<string>(),
 		minGapMinutes: 0,
 		minCredits: null
 	};
@@ -69,7 +73,12 @@ export interface CourseRequest {
 }
 
 /** A per-section filter that a pinned section was kept despite violating. */
-export type OverriddenFilter = 'earliestStart' | 'latestEnd' | 'dayOff' | 'openSeats';
+export type OverriddenFilter =
+	| 'earliestStart'
+	| 'latestEnd'
+	| 'dayOff'
+	| 'openSeats'
+	| 'instructionMode';
 
 /** Raised when a pinned section was kept despite violating active filters. */
 export interface PinNotice {
