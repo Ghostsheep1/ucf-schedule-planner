@@ -128,6 +128,31 @@ describe('per-section filters', () => {
 		expect(open.schedules).toHaveLength(2);
 	});
 
+	test('only-open-seats also filters pinned full sections', () => {
+		const c = course('AAA101', [
+			section('AAA101', '0101', [meeting('MWF', 9, 10)], {
+				openSeats: 0
+			}),
+			section('AAA101', '0201', [meeting('MWF', 13, 14)], {
+				openSeats: 5
+			})
+		]);
+
+		const closedPin = generate(
+			[req(c, true, { kind: 'bySection', sectionCode: '0101' })],
+			defaultConstraints()
+		);
+		expect(closedPin.schedules).toHaveLength(0);
+		expect(closedPin.coursesWithNoValidSections).toEqual(['AAA101']);
+
+		const instructorPin = generate(
+			[req(c, true, { kind: 'byInstructor', name: 'Prof 0101' })],
+			defaultConstraints()
+		);
+		expect(instructorPin.schedules).toHaveLength(0);
+		expect(instructorPin.coursesWithNoValidSections).toEqual(['AAA101']);
+	});
+
 	test('time window filters sections', () => {
 		const c = course('AAA101', [
 			section('AAA101', '0101', [meeting('MWF', 8, 9)]),
