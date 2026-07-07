@@ -14,6 +14,7 @@ import type {
 	InstructorsResponse
 } from '@jupiterp/jupiterp';
 import { client } from '$lib/client';
+import { sectionMatchesAvailability, sectionMatchesModes } from '$lib/sectionFilters';
 import { CourseDataCache, type RequestInput } from './CourseDataCache';
 import {
 	DepartmentsStore,
@@ -142,18 +143,24 @@ function filterAndSortCourseArray(courses: Course[]): Course[] {
 	});
 
 	const fs = filters.clientSideFilters;
+	const hasSectionFilters =
+		fs.onlyOpen === true ||
+		fs.maxWaitlist !== undefined ||
+		(fs.instructionModes !== undefined && fs.instructionModes.length > 0);
 
 	const filtered =
-		fs.onlyOpen !== true
+		!hasSectionFilters
 			? sorted
 			: sorted.map((course) => {
 					if (course.sections === null || course.sections.length === 0) {
 						return course;
 					}
 
-					const openSections = course.sections.filter((section) => {
-						return section.openSeats > 0;
-					});
+					const openSections = course.sections.filter(
+						(section) =>
+							sectionMatchesAvailability(section, fs.onlyOpen === true, fs.maxWaitlist) &&
+							sectionMatchesModes(section, fs.instructionModes)
+					);
 
 					return {
 						...course,
@@ -164,13 +171,13 @@ function filterAndSortCourseArray(courses: Course[]): Course[] {
 	if (
 		fs.maxCredits === undefined &&
 		fs.minCredits === undefined &&
-		(fs.onlyOpen === undefined || fs.onlyOpen === false)
+		!hasSectionFilters
 	) {
 		return sorted;
 	}
 
 	return filtered.filter((course) => {
-		if (fs.onlyOpen === true && (course.sections === null || course.sections.length === 0)) {
+		if (hasSectionFilters && (course.sections === null || course.sections.length === 0)) {
 			return false;
 		}
 
