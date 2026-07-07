@@ -7,6 +7,7 @@ Copyright (C) 2026 Andrew Cupps
 <script lang="ts">
 	import { CloseOutline } from 'flowbite-svelte-icons';
 	import { splitCourseCode } from '../../lib/course-planner/Formatting';
+	import { sectionMatchesAvailability, sectionMatchesModes } from '../../lib/sectionFilters';
 	import GeneratorSelect from './GeneratorSelect.svelte';
 	import { GeneratorConstraintsStore, GeneratorRequirementsStore } from '../../stores/GeneratorStores';
 	import type { GeneratorRequirement } from '../../stores/GeneratorStores';
@@ -14,13 +15,28 @@ Copyright (C) 2026 Andrew Cupps
 	export let requirement: GeneratorRequirement;
 	export let index: number;
 
-	let onlyOpenSeats = true;
+	let sectionConstraint: { onlyOpen: boolean; maxWaitlist: number | null; modes: string[] } = {
+		onlyOpen: true,
+		maxWaitlist: null,
+		modes: []
+	};
 	GeneratorConstraintsStore.subscribe((constraints) => {
-		onlyOpenSeats = constraints.onlyOpenSeats;
+		sectionConstraint = {
+			onlyOpen: constraints.onlyOpenSeats,
+			maxWaitlist: constraints.maxWaitlist,
+			modes: [...constraints.instructionModes]
+		};
 	});
 
 	$: sections = requirement.course.sections ?? [];
-	$: selectableSections = onlyOpenSeats ? sections.filter((section) => section.openSeats > 0) : sections;
+	$: selectableSections = sections.filter(
+		(section) =>
+			sectionMatchesAvailability(
+				section,
+				sectionConstraint.onlyOpen,
+				sectionConstraint.maxWaitlist
+			) && sectionMatchesModes(section, sectionConstraint.modes)
+	);
 	$: instructors = Array.from(new Set(selectableSections.flatMap((s) => s.instructors))).sort();
 	$: pinMode = requirement.pin.kind;
 	$: sectionOptions = selectableSections.map((s) => ({ value: s.sectionCode, label: s.sectionCode }));
