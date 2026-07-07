@@ -69,6 +69,8 @@ export function overriddenFilterLabel(filter: OverriddenFilter): string {
 			return 'meets on a day you marked off';
 		case 'openSeats':
 			return 'has no open seats';
+		case 'instructionMode':
+			return 'does not match your instruction-mode filter';
 	}
 }
 
