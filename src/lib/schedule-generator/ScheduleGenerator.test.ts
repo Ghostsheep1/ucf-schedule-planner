@@ -32,7 +32,13 @@ function section(
 	courseCode: string,
 	sectionCode: string,
 	meetings: ClassMeeting[],
-	opts: { openSeats?: number; instructors?: string[] } = {}
+	opts: {
+		openSeats?: number;
+		instructors?: string[];
+		waitlist?: number;
+		waitlistCapacity?: number;
+		mode?: string;
+	} = {}
 ): Section {
 	return {
 		courseCode,
@@ -41,9 +47,11 @@ function section(
 		meetings,
 		openSeats: opts.openSeats ?? 30,
 		totalSeats: 30,
-		waitlist: 0,
-		holdfile: null
-	};
+		waitlist: opts.waitlist ?? 0,
+		holdfile: null,
+		waitlistCapacity: opts.waitlistCapacity,
+		mode: opts.mode
+	} as Section;
 }
 
 function course(
@@ -151,6 +159,46 @@ describe('per-section filters', () => {
 		);
 		expect(instructorPin.schedules).toHaveLength(0);
 		expect(instructorPin.coursesWithNoValidSections).toEqual(['AAA101']);
+	});
+
+	test('max waitlist allows closed sections with short waitlists', () => {
+		const c = course('AAA101', [
+			section('AAA101', '0101', [meeting('MWF', 9, 10)], {
+				openSeats: 0,
+				waitlist: 2,
+				waitlistCapacity: 10
+			}),
+			section('AAA101', '0201', [meeting('MWF', 13, 14)], {
+				openSeats: 0,
+				waitlist: 8,
+				waitlistCapacity: 10
+			})
+		]);
+
+		const result = generateFromCourses([c], {
+			...defaultConstraints(),
+			maxWaitlist: 3
+		});
+		expect(result.schedules).toHaveLength(1);
+		expect(result.schedules[0].selections[0].section.sectionCode).toBe('0101');
+	});
+
+	test('instruction mode filter keeps only matching sections', () => {
+		const c = course('AAA101', [
+			section('AAA101', '0101', [meeting('MWF', 9, 10)], {
+				mode: 'in-person'
+			}),
+			section('AAA101', '0201', [], {
+				mode: 'online'
+			})
+		]);
+
+		const result = generateFromCourses([c], {
+			...defaultConstraints(),
+			instructionModes: new Set(['online'])
+		});
+		expect(result.schedules).toHaveLength(1);
+		expect(result.schedules[0].selections[0].section.sectionCode).toBe('0201');
 	});
 
 	test('time window filters sections', () => {
