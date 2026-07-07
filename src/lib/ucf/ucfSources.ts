@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
-import { formatInstructorName } from "$lib/ucf/format";
-import type { Campus, Course, DayOfWeek, InstructionMode, Meeting, Section } from "$lib/ucf/types";
+import { formatInstructorName } from "./format";
+import type { Campus, Course, DayOfWeek, InstructionMode, Meeting, Section } from "./types";
 
 export const UCF_CATALOG_ID = "66bcc88cf93938001c548373";
 export const UCF_CATALOG_REFERER = "https://www.ucf.edu/catalog/undergraduate/";
