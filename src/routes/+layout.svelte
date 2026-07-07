@@ -20,11 +20,11 @@ Copyright (C) 2026 Andrew Cupps
 	<div
 		class="flex h-12 flex-row justify-start border-b-2 border-divBorderLight dark:border-divBorderDark"
 	>
-		<a href="/" class="flex shrink-0 items-center gap-5 py-0.5" aria-label="Knight Planner home">
+		<a href="/" class="flex shrink-0 items-center gap-2 py-1" aria-label="Knight Planner home">
 			<img
-				src="/logo-mark.svg?v=20260706a"
+				src="/logo-mark.png?v=20260705d"
 				alt="Knight Planner logo"
-				class="h-11 w-11 object-contain"
+				class="h-10 w-10 object-contain"
 			/>
 			<span class="flex flex-col leading-none">
 				<span
