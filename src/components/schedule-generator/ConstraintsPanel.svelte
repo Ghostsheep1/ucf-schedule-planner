@@ -37,6 +37,8 @@ Copyright (C) 2026 Andrew Cupps
 		if (c.latestEndMinutes !== null) count++;
 		count += c.daysOff.size;
 		if (c.onlyOpenSeats) count++;
+		if (c.maxWaitlist !== null) count++;
+		if (c.instructionModes.size > 0) count++;
 		if (c.minGapMinutes > 0) count++;
 		if (c.minCredits !== null) count++;
 		return count;
@@ -64,6 +66,8 @@ Copyright (C) 2026 Andrew Cupps
 			earliestStartMinutes: null,
 			latestEndMinutes: null,
 			daysOff: new Set<EngineDay>(),
+			maxWaitlist: null,
+			instructionModes: new Set<string>(),
 			minGapMinutes: 0,
 			minCredits: null
 		}));
@@ -73,6 +77,17 @@ Copyright (C) 2026 Andrew Cupps
 		const parsed = parseInt(value, 10);
 		return Number.isNaN(parsed) ? null : parsed;
 	}
+
+	function setMode(value: string) {
+		const modes =
+			value === 'online-hybrid' ? ['online', 'hybrid'] : value === '' ? [] : [value];
+		patch({ instructionModes: new Set(modes) });
+	}
+
+	$: modeValue =
+		constraints.instructionModes.has('online') && constraints.instructionModes.has('hybrid')
+			? 'online-hybrid'
+			: [...constraints.instructionModes][0] ?? '';
 </script>
 
 <div class="flex flex-col">
@@ -151,6 +166,38 @@ Copyright (C) 2026 Andrew Cupps
 				/>
 				<span class="opacity-80">Only open sections</span>
 			</label>
+
+			<div class="flex flex-row flex-wrap items-center gap-3">
+				<div class="flex flex-row items-center gap-2">
+					<span class="opacity-70">Mode</span>
+					<GeneratorSelect
+						options={[
+							{ value: '', label: 'Any' },
+							{ value: 'in-person', label: 'In-person' },
+							{ value: 'online', label: 'Online' },
+							{ value: 'hybrid', label: 'Hybrid' },
+							{ value: 'online-hybrid', label: 'Online or hybrid' }
+						]}
+						value={modeValue}
+						onChange={setMode}
+						buttonClass="w-32"
+						title="Instruction mode"
+					/>
+				</div>
+				<label class="flex flex-row items-center gap-2">
+					<span class="opacity-70">Max waitlist</span>
+					<input
+						type="number"
+						min="0"
+						step="1"
+						value={constraints.maxWaitlist ?? ''}
+						on:change={(e) => patch({ maxWaitlist: setNumberOrNull(e.currentTarget.value) })}
+						class="w-16 rounded-md border border-outlineLight
+							bg-bgLight px-1 py-0.5 dark:border-outlineDark
+							dark:bg-bgDark"
+					/>
+				</label>
+			</div>
 
 			<!-- Min gap & min credits -->
 			<div class="flex flex-row flex-wrap items-center gap-4">
