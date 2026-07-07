@@ -505,6 +505,7 @@ function toPublicSection(section: ParsedPeopleSoftSection): Section {
   return {
     id: section.id,
     sectionNumber: section.sectionNumber,
+    component: section.component,
     professorName: section.professorName,
     professorRating: section.professorRating,
     professorRatingCount: section.professorRatingCount,
@@ -575,7 +576,9 @@ function parsePeopleSoftSectionRow($: cheerio.CheerioAPI, row: Parameters<cheeri
   const classNumber = field("MTG_CLASS_NBR");
   const rowText = $(row).text().replace(/\s+/g, " ").trim();
   const sectionLabel = field("MTG_CLASSNAME") || rowText;
-  const sectionNumber = sectionLabel.match(/\b([A-Z0-9]+)-(LEC|LAB|DIS|SEM|IND|CLN|RSC)\b/i)?.[1] ?? String(fallbackIndex + 1).padStart(4, "0");
+  const sectionMatch = sectionLabel.match(/\b([A-Z0-9]+)-(LEC|LAB|DIS|SEM|IND|CLN|RSC)\b/i);
+  const sectionNumber = sectionMatch?.[1] ?? String(fallbackIndex + 1).padStart(4, "0");
+  const component = sectionMatch?.[2]?.toUpperCase();
   const professorName = formatInstructorName(field("MTG_INSTR") || "TBA");
   const room = field("MTG_ROOM");
   const meetings = parseMeetingText(rowText);
@@ -592,6 +595,7 @@ function parsePeopleSoftSectionRow($: cheerio.CheerioAPI, row: Parameters<cheeri
     classNumber,
     detailAction,
     sectionNumber,
+    component,
     professorName,
     seatsAvailable: 0,
     seatsTotal: 0,
