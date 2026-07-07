@@ -15,6 +15,7 @@
 import type { Course, Section } from '@jupiterp/jupiterp';
 import type { ScheduleSelection } from '../../types';
 import { noDifferences } from '../course-planner/Schedule';
+import { sectionMatchesAvailability, sectionMatchesModes } from '../sectionFilters';
 import type {
 	CourseRequest,
 	EngineDay,
@@ -135,7 +136,16 @@ function pinnedSections(request: CourseRequest): Section[] {
 
 /** Whether a candidate survives the per-section hard constraints. */
 function candidatePasses(candidate: Candidate, constraints: HardConstraints): boolean {
-	if (constraints.onlyOpenSeats && candidate.section.openSeats <= 0) {
+	if (
+		!sectionMatchesAvailability(
+			candidate.section,
+			constraints.onlyOpenSeats,
+			constraints.maxWaitlist
+		)
+	) {
+		return false;
+	}
+	if (!sectionMatchesModes(candidate.section, [...constraints.instructionModes])) {
 		return false;
 	}
 	const earliest = constraints.earliestStartMinutes;
@@ -157,8 +167,17 @@ function candidatePasses(candidate: Candidate, constraints: HardConstraints): bo
 /** Which per-section filters a (pinned) candidate violates. */
 function overriddenFilters(candidate: Candidate, constraints: HardConstraints): OverriddenFilter[] {
 	const result: OverriddenFilter[] = [];
-	if (constraints.onlyOpenSeats && candidate.section.openSeats <= 0) {
+	if (
+		!sectionMatchesAvailability(
+			candidate.section,
+			constraints.onlyOpenSeats,
+			constraints.maxWaitlist
+		)
+	) {
 		result.push('openSeats');
+	}
+	if (!sectionMatchesModes(candidate.section, [...constraints.instructionModes])) {
+		result.push('instructionMode');
 	}
 	const earliest = constraints.earliestStartMinutes;
 	if (earliest !== null && candidate.slots.some((s) => s.start < earliest)) {
@@ -312,10 +331,14 @@ export function generate(
 		if (request.pin.kind === 'none') {
 			kept = candidates.filter((c) => candidatePasses(c, constraints));
 		} else {
-			const openSeatCandidates =
-				constraints.onlyOpenSeats === true
-					? candidates.filter((candidate) => candidate.section.openSeats > 0)
-					: candidates;
+			const openSeatCandidates = candidates.filter(
+				(candidate) =>
+					sectionMatchesAvailability(
+						candidate.section,
+						constraints.onlyOpenSeats,
+						constraints.maxWaitlist
+					) && sectionMatchesModes(candidate.section, [...constraints.instructionModes])
+			);
 			for (const candidate of openSeatCandidates) {
 				const overridden = overriddenFilters(candidate, constraints);
 				if (overridden.length > 0) {
