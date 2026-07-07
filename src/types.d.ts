@@ -278,4 +278,6 @@ export interface ClientSideFilterParams {
 	minCredits?: number;
 	maxCredits?: number;
 	onlyOpen?: boolean;
+	instructionModes?: string[];
+	maxWaitlist?: number | null;
 }
