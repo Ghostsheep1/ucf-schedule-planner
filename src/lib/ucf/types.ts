@@ -13,6 +13,7 @@ export type Meeting = {
 export type Section = {
   id: string;
   sectionNumber: string;
+  component?: string;
   professorName: string;
   professorRating?: number;
   professorRatingCount?: number;
