@@ -1,6 +1,6 @@
 import type { CoursesConfig, CoursesWithSectionsConfig } from '@jupiterp/jupiterp';
-import type { Course } from '$lib/ucf/types';
-import type { UcfSubject } from '$lib/ucf/ucfSources';
+import type { Course } from './types';
+import type { UcfSubject } from './ucfSources';
 
 export type IndexedInstructor = {
 	name: string;
