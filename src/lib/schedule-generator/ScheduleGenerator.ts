@@ -299,8 +299,9 @@ export function generate(
 	const pinNotices: PinNotice[] = [];
 
 	// STAGE 1 — Pre-filter. Drop sections that violate per-section
-	// constraints. Pinned courses skip the filter (the pin wins) but report
-	// what each pinned section overrode.
+	// constraints. Pinned courses can override time/day filters, but open-seat
+	// filtering remains hard so "Only open sections" never generates full
+	// sections.
 	const perCourse = requests.map((request) => {
 		const candidates: Candidate[] = pinnedSections(request).map((section) => ({
 			course: request.course,
@@ -311,7 +312,11 @@ export function generate(
 		if (request.pin.kind === 'none') {
 			kept = candidates.filter((c) => candidatePasses(c, constraints));
 		} else {
-			for (const candidate of candidates) {
+			const openSeatCandidates =
+				constraints.onlyOpenSeats === true
+					? candidates.filter((candidate) => candidate.section.openSeats > 0)
+					: candidates;
+			for (const candidate of openSeatCandidates) {
 				const overridden = overriddenFilters(candidate, constraints);
 				if (overridden.length > 0) {
 					pinNotices.push({
@@ -321,7 +326,7 @@ export function generate(
 					});
 				}
 			}
-			kept = candidates;
+			kept = openSeatCandidates;
 		}
 		return { request, candidates: kept };
 	});
