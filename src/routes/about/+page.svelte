@@ -1,8 +1,24 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { loadUcfSectionIndex } from '$lib/ucf/sectionIndex';
+
 	const h1Classes = 'text-2xl border-b-2 border-divBorderLight dark:border-divBorderDark';
 	const h2Classes = 'text-xl border-b-2 border-divBorderLight dark:border-divBorderDark';
 	const h3Classes = 'text-l border-b-2 border-divBorderLight dark:border-divBorderDark';
 	const pClasses = 'my-2 text-normal leading-5';
+
+	let indexUpdatedAt = '';
+	let indexTerm = '';
+
+	onMount(async () => {
+		const index = await loadUcfSectionIndex();
+		if (!index) return;
+		indexTerm = index.term;
+		indexUpdatedAt = new Intl.DateTimeFormat(undefined, {
+			dateStyle: 'medium',
+			timeStyle: 'short'
+		}).format(new Date(index.generatedAt));
+	});
 </script>
 
 <div class="custom-scrollbar fixed bottom-0 top-12 overflow-y-auto px-4 py-2">
@@ -16,6 +32,12 @@
 		The app was built by Henrique Silva Ribeiro and is currently version 1.0.0 while the UCF release
 		is still being polished.
 	</p>
+	{#if indexUpdatedAt}
+		<p class={pClasses}>
+			Course, section, seat, waitlist, and professor-rating data is indexed through
+			<strong>{indexTerm}</strong> and was last updated on <strong>{indexUpdatedAt}</strong>.
+		</p>
+	{/if}
 	<a href="/changelog" class="text-orange underline">View changelog</a>
 	<h2 class={h2Classes}>Professor Ratings</h2>
 	<p class={pClasses}>
