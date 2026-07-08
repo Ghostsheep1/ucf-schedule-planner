@@ -20,6 +20,7 @@ Copyright (C) 2026 Andrew Cupps
 	import type { ScheduleBlock, ScheduleSelection } from '../../../types';
 	import { noDifferences } from '$lib/course-planner/Schedule';
 	import { firstAvailableColor } from '$lib/course-planner/ColorSelector';
+	import type { PlannerSection } from '$lib/sectionFilters';
 
 	export let courseCode: string;
 	export let section: Section;
@@ -184,6 +185,33 @@ Copyright (C) 2026 Andrew Cupps
 	let locationHover: boolean = false;
 
 	const alertClasses: string = `fixed left-[50%] translate-x-[-50%] z-50 w-[40%] top-14 min-w-72 h-8 rounded-lg text-center text-white lg:hidden bg-orange shadow-lg content-center transition-opacity duration-500`;
+
+	function sectionCodeParts(section: Section) {
+		const sectionExtras = section as PlannerSection;
+		const codes = section.sectionCode.split('/');
+		const components = sectionExtras.components ?? sectionExtras.component?.split('+') ?? [];
+		return codes.map((code, index) => ({
+			code,
+			label: componentLabel(components[index], index)
+		}));
+	}
+
+	function componentLabel(component: string | undefined, index: number) {
+		switch (component) {
+			case 'LEC':
+				return 'LEC';
+			case 'LAB':
+				return 'LAB';
+			case 'DIS':
+				return 'DIS';
+			case 'CLN':
+				return 'CLN';
+			case 'RSC':
+				return 'RSC';
+			default:
+				return index === 0 ? 'SEC' : 'PART';
+		}
+	}
 </script>
 
 <!-- Ignoring a11y for mouseover because it's a non-essential feature -->
@@ -195,7 +223,7 @@ Copyright (C) 2026 Andrew Cupps
 	on:mouseout={isDesktop ? removeHoverSection : null}
 	on:focusin={isDesktop ? addHoverSection : null}
 	on:focusout={isDesktop ? removeHoverSection : null}
-	class="flex w-full flex-row border-t-2 border-outlineLight pb-1 text-left transition dark:border-outlineDark
+	class="flex w-full flex-row items-start border-t-2 border-outlineLight pb-1 text-left transition dark:border-outlineDark
 	{sectionAdded ? 'bg-hoverLight dark:bg-hoverDark' : ''}"
 	class:lg:hover:bg-hoverLight={!profsHover && !locationHover}
 	class:lg:hover:dark:bg-hoverDark={!profsHover && !locationHover}
@@ -204,15 +232,20 @@ Copyright (C) 2026 Andrew Cupps
 	<!-- Section code (click to view) -->
 	<button
 		on:click={isDesktop ? null : scrollToTopPlannerTop}
-		class="w-12 text-sm font-semibold text-secCodesLight xl:w-14 xl:text-base dark:text-secCodesDark"
+		class="w-[4.75rem] shrink-0 pr-2 text-xs font-semibold leading-tight text-secCodesLight xl:w-20 xl:text-sm dark:text-secCodesDark"
 	>
-		<div class="h-full align-top">
-			{section.sectionCode}
+		<div class="flex h-full flex-col gap-0.5 pt-0.5 align-top">
+			{#each sectionCodeParts(section) as part}
+				<span class="whitespace-nowrap">
+					<span class="opacity-70">{part.label}</span>
+					<span>{part.code}</span>
+				</span>
+			{/each}
 		</div>
 	</button>
 
 	<!-- Section info -->
-	<div class="w-full">
+	<div class="min-w-0 flex-1 overflow-hidden">
 		<!-- Instructors -->
 		{#each section.instructors as instructor}
 			<InstructorListing {instructor} bind:profsHover {removeHoverSection} />
